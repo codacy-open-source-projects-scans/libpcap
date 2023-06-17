@@ -739,22 +739,23 @@ pcap_compile(pcap_t *p, struct bpf_program *program,
 	yyscan_t scanner = NULL;
 	volatile YY_BUFFER_STATE in_buffer = NULL;
 	u_int len;
-	int  rc;
+	int rc;
 
 	/*
 	 * If this pcap_t hasn't been activated, it doesn't have a
 	 * link-layer type, so we can't use it.
 	 */
 	if (!p->activated) {
-		snprintf(p->errbuf, PCAP_ERRBUF_SIZE,
+		(void)snprintf(p->errbuf, PCAP_ERRBUF_SIZE,
 		    "not-yet-activated pcap_t passed to pcap_compile");
 		return (PCAP_ERROR);
 	}
 
 #ifdef _WIN32
-	if (!done)
+	if (!done) {
 		pcap_wsockinit();
-	done = 1;
+		done = 1;
+	}
 #endif
 
 #ifdef ENABLE_REMOTE
@@ -794,15 +795,18 @@ pcap_compile(pcap_t *p, struct bpf_program *program,
 
 	cstate.snaplen = pcap_snapshot(p);
 	if (cstate.snaplen == 0) {
-		snprintf(p->errbuf, PCAP_ERRBUF_SIZE,
+		(void)snprintf(p->errbuf, PCAP_ERRBUF_SIZE,
 			 "snaplen of 0 rejects all packets");
 		rc = PCAP_ERROR;
 		goto quit;
 	}
 
-	if (pcap_lex_init(&scanner) != 0)
+	if (pcap_lex_init(&scanner) != 0) {
 		pcap_fmt_errmsg_for_errno(p->errbuf, PCAP_ERRBUF_SIZE,
 		    errno, "can't initialize scanner");
+		rc = PCAP_ERROR;
+		goto quit;
+	}
 	in_buffer = pcap__scan_string(xbuf ? xbuf : "", scanner);
 
 	/*
@@ -7479,7 +7483,7 @@ gen_mcode6(compiler_state_t *cstate, const char *s, bpf_u_int32 masklen,
 	addr = &((struct sockaddr_in6 *)res->ai_addr)->sin6_addr;
 
 	if (masklen > sizeof(mask.s6_addr) * 8)
-		bpf_error(cstate, "mask length must be <= %u", (unsigned int)(sizeof(mask.s6_addr) * 8));
+		bpf_error(cstate, "mask length must be <= %zu", sizeof(mask.s6_addr) * 8);
 	memset(&mask, 0, sizeof(mask));
 	memset(&mask.s6_addr, 0xff, masklen / 8);
 	if (masklen % 8) {
@@ -8547,7 +8551,6 @@ gen_ifindex(compiler_state_t *cstate, int ifindex)
 			/* We have a FILE *, so this is a savefile */
 			bpf_error(cstate, "ifindex not supported on %s when reading savefiles",
 			    pcap_datalink_val_to_description_or_dlt(cstate->linktype));
-			b0 = NULL;
 			/*NOTREACHED*/
 		}
 		/* match ifindex */

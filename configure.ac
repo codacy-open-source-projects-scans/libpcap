@@ -806,11 +806,18 @@ else
 		V_PCAP=hurd
 	else
 		#
-		# Nothing we support.
+		# We don't have any capture type we know about.
+		# Report an error, and tell the user to configure with
+		# --with-pcap=null if they want a libpcap that can't
+		# capture but that can read capture files.  That way,
+		# nobody gets surprised by getting a no-capture
+		# libpcap without asking for that.
 		#
-		V_PCAP=null
-		AC_MSG_WARN(cannot determine packet capture interface)
-		AC_MSG_WARN((see the INSTALL.md file for more info))
+		AC_MSG_ERROR([No supported packet capture interface was found.
+ See the INSTALL.md file for information on packet capture support in
+ various operating systems.
+ If you want a libpcap that cannot capture packets but that can read
+ pcap and pcapng files, run configure with --with-pcap=null.])
 	fi
 fi
 AC_MSG_CHECKING(packet capture type)
@@ -1108,6 +1115,25 @@ bpf)
 		#endif
 		#include <net/bpf.h>
 	    ])
+
+	#
+	# Check whether there's a net/ipnet.h header and,
+	# if so, whether it defines IPNET_ANY_LINK - if so,
+	# we assume we have the "any" device (that's a
+	# Solaris header, and later versions of Solaris
+	# have an "any" device).
+	#
+	# Attempting to include it at compile time could
+	# be a pain, as it's a kernel header.
+	#
+	AC_MSG_CHECKING(whether the Solaris "any" device is supported)
+	if test -e /usr/include/inet/ipnet.h &&
+	    grep -q IPNET_ANY_LINK /usr/include/inet/ipnet.h; then
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_SOLARIS_ANY_DEVICE, , [target host supports Solaris "any" device])
+	else
+		AC_MSG_RESULT(no)
+	fi
 	;;
 
 pf)

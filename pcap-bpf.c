@@ -658,7 +658,19 @@ bpf_bind(int fd, const char *name, char *errbuf)
 	if (status < 0) {
 		switch (errno) {
 
+#if defined(HAVE_SOLARIS)
+		/*
+		 * For some reason, Solaris 11 appears to return ESRCH
+		 * for unknown devices.
+		 */
+		case ESRCH:
+#else
+		/*
+		 * The *BSDs (including CupertinoBSD a/k/a Darwin)
+		 * return ENXIO for unknown devices.
+		 */
 		case ENXIO:
+#endif
 			/*
 			 * There's no such device.
 			 *
@@ -3017,6 +3029,14 @@ pcap_platform_finddevs(pcap_if_list_t *devlistp, char *errbuf)
 	if (pcap_findalldevs_interfaces(devlistp, errbuf, check_bpf_bindable,
 	    get_if_flags) == -1)
 		return (-1);	/* failure */
+
+#if defined(HAVE_SOLARIS_ANY_DEVICE)
+	/*
+	 * Add the "any" device.
+	 */
+	if (pcap_add_any_dev(devlistp, errbuf) == NULL)
+		return (-1);
+#endif
 
 #if defined(__FreeBSD__) && defined(SIOCIFCREATE2)
 	if (finddevs_usb(devlistp, errbuf) == -1)
