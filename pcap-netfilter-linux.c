@@ -61,7 +61,7 @@
  *       It took me quite some time to debug ;/
  *
  *       Sending any data to nfnetlink socket requires CAP_NET_ADMIN privileges,
- *       and in nfqueue we need to send verdict reply after recving packet.
+ *       and in nfqueue we need to send verdict reply after receiving packet.
  *
  *       In tcpdump you can disable dropping privileges with -Z root
  */
@@ -613,12 +613,15 @@ netfilter_activate(pcap_t* handle)
 	if (type == NFLOG) {
 		handle->linktype = DLT_NFLOG;
 		handle->dlt_list = (u_int *) malloc(sizeof(u_int) * 2);
-		if (handle->dlt_list != NULL) {
-			handle->dlt_list[0] = DLT_NFLOG;
-			handle->dlt_list[1] = DLT_IPV4;
-			handle->dlt_count = 2;
+		if (handle->dlt_list == NULL) {
+			pcap_fmt_errmsg_for_errno(handle->errbuf,
+			    PCAP_ERRBUF_SIZE, errno,
+			    "Can't allocate DLT list");
+			goto close_fail;
 		}
-
+		handle->dlt_list[0] = DLT_NFLOG;
+		handle->dlt_list[1] = DLT_IPV4;
+		handle->dlt_count = 2;
 	} else
 		handle->linktype = DLT_IPV4;
 

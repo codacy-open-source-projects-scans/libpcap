@@ -352,7 +352,7 @@ pcap_next_zbuf(pcap_t *p, int *cc)
 	 * sure that the timeout gets adjusted accordingly.  This requires
 	 * that we analyze when the timeout should be been expired, and
 	 * subtract the current time from that.  If after this operation,
-	 * our timeout is less then or equal to zero, handle it like a
+	 * our timeout is less than or equal to zero, handle it like a
 	 * regular timeout.
 	 */
 	tmout = p->opt.timeout;
@@ -2460,14 +2460,15 @@ pcap_activate_bpf(pcap_t *p)
 	 */
 	if (v == DLT_EN10MB && p->dlt_count == 0) {
 		p->dlt_list = (u_int *) malloc(sizeof(u_int) * 2);
-		/*
-		 * If that fails, just leave the list empty.
-		 */
-		if (p->dlt_list != NULL) {
-			p->dlt_list[0] = DLT_EN10MB;
-			p->dlt_list[1] = DLT_DOCSIS;
-			p->dlt_count = 2;
+		if (p->dlt_list == NULL) {
+			pcap_fmt_errmsg_for_errno(p->errbuf, PCAP_ERRBUF_SIZE,
+			    errno, "malloc");
+			status = PCAP_ERROR;
+			goto bad;
 		}
+		p->dlt_list[0] = DLT_EN10MB;
+		p->dlt_list[1] = DLT_DOCSIS;
+		p->dlt_count = 2;
 	}
 #ifdef PCAP_FDDIPAD
 	if (v == DLT_FDDI)
@@ -2747,7 +2748,7 @@ check_bpf_bindable(const char *name)
 	 * adapter, rather than by implementing the ioctls that
 	 * {Free,Net,Open,DragonFly}BSD provide. Opening that device
 	 * puts the adapter into monitor mode, which, at least for
-	 * some adapters, causes them to deassociate from the network
+	 * some adapters, causes them to disassociate from the network
 	 * with which they're associated.
 	 *
 	 * Instead, we try to open the corresponding "en" device (so
