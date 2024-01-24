@@ -22,6 +22,12 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       Add support for Block Ack Req and Block Ack frame types (pull
         request #1039).
       Deprecate pcap_compile_nopcap().
+      Optimizer fix from Archit Shah to recompute dominators after
+        moving code (#976); fixes #945 (although the resulting filter
+        isn't empty).
+      Optimizer fix from Archit Shah to mark value as unknown when store
+        of that value is deleted (#972); fixes #143, #434, #436, #437,
+        and #1076.
     Savefiles:
       Reject pcap files where one of the reserved fields in the
         "link-layer type plus other stuff" is non-zero.
@@ -38,6 +44,7 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       autoconf: Add autogen.sh, remove configure and config.h.in and put
         these generated files in the release tarball.
       Autoconf: Update install-sh script to the latest available version.
+      Autoconf: Update config.{guess,sub}, timestamps 2024-01-01
 
 DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
   Summary for 1.10.5 libpcap release (so far!)
