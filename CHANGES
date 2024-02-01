@@ -22,12 +22,6 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       Add support for Block Ack Req and Block Ack frame types (pull
         request #1039).
       Deprecate pcap_compile_nopcap().
-      Optimizer fix from Archit Shah to recompute dominators after
-        moving code (#976); fixes #945 (although the resulting filter
-        isn't empty).
-      Optimizer fix from Archit Shah to mark value as unknown when store
-        of that value is deleted (#972); fixes #143, #434, #436, #437,
-        and #1076.
     Savefiles:
       Reject pcap files where one of the reserved fields in the
         "link-layer type plus other stuff" is non-zero.
@@ -37,14 +31,12 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
         another incorporate-remote-capture project. (issue #1120)
     Documentation:
       Document a standard format for writing out BPF filter programs.
-      Explain "any" device better in pcap_open_live(3PCAP).
     Building and testing:
       Apply GNU Hurd support patch from the Debian package.
       CI: Introduce and use LIBPCAP_CMAKE_TAINTED.
       autoconf: Add autogen.sh, remove configure and config.h.in and put
         these generated files in the release tarball.
       Autoconf: Update install-sh script to the latest available version.
-      Autoconf: Update config.{guess,sub}, timestamps 2024-01-01
 
 DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
   Summary for 1.10.5 libpcap release (so far!)
@@ -70,6 +62,12 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
     Packet filtering:
       Improve reporting of some invalid filter expressions.
       Return an error from pcap_compile() if the scanner fails to initialize.
+      Optimizer fix from Archit Shah to recompute dominators after
+        moving code (#976); fixes #945 (although the resulting filter
+        isn't empty).
+      Optimizer fix from Archit Shah to mark value as unknown when store
+        of that value is deleted (#972); fixes #143, #434, #436, #437,
+        and #1076.
     Linux:
       Properly return warnings.
       Don't use DLT_LINUX_SLL2 for anything other than the "any" device.
@@ -105,9 +103,12 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       Handle routines removed in at least some OpenSSL libraries.
       Clean up sock_initaddress() and its callers to avoid double frees
         in some cases.
+      Don't define SOCKET ourselves; instead, define PCAP_SOCKET as int
+        on UN*Xes and as SOCKET on Windows.
     Savefiles:
       Handle DLT_/LINKTYPE_ mapping better, to handle some
         OpenBSD-specific link types better.
+      Treat if_tsoffset as signed in pcapng files, as the spec says.
     Building and testing:
       Add a configure option to help debugging (--enable-instrument-functions)
       Improved tests and error reporting for uses of pkg-config, and
@@ -133,6 +134,14 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       Cirrus CI: Add the "make releasecheck" command in the Linux task.
       Makefile.in: Add the whitespacecheck target.
       Cirrus CI: Run the "make whitespacecheck" command in the Linux task.
+      Autoconf: Update config.{guess,sub}, timestamps 2024-01-01
+      Compile with '-Wnull-pointer-subtraction',
+        '-Wunused-but-set-parameter', and '-Wunused-but-set-variable' in
+        devel mode if supported
+      Don't ignore spaces between CMAKE_C_FLAGS and DPDK_C_FLAGS with
+        CMake.
+      Use noreturn and __format__ with XL C 7.0 and later.
+      Check for the same -W flags in autotools and CMake.
     Documentation:
       Update and fix pcap-filter man page.
       Add a README.haiku.md file.
@@ -142,6 +151,10 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       Update pcap-savefile man page to match the Internet-Draft for
         pcap.
       Fix CMake issues for target used by other projects.
+      Explain "any" device better in pcap_open_live(3PCAP).
+      Update INSTALL.md.
+      Note in man pages that errbuf arguments must point to an error
+        buffer.
 
 Friday, April 7, 2023 / The Tcpdump Group
   Summary for 1.10.4 libpcap release

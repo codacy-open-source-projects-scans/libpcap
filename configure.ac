@@ -16,7 +16,7 @@ dnl
 
 AC_PREREQ([2.69])
 
-AC_INIT([pcap],[m4_esyscmd_s(cat VERSION)])
+AC_INIT([pcap],[m4_esyscmd_s(cat VERSION)],[https://github.com/the-tcpdump-group/libpcap/issues])
 AC_CONFIG_SRCDIR(pcap.c)
 AC_SUBST(PACKAGE_NAME)
 
@@ -269,7 +269,7 @@ AC_LBL_LIBRARY_NET
 
 #
 # Check for reentrant versions of getnetbyname_r(), as provided by
-# Linux (glibc), Solaris/IRIX, and AIX (with three different APIs!).
+# Linux (glibc), Solaris, and AIX (with three different APIs!).
 # If we don't find one, we just use getnetbyname(), which uses
 # thread-specific data on many platforms, but doesn't use it on
 # NetBSD or OpenBSD, and may not use it on older versions of other
@@ -301,7 +301,7 @@ AC_CHECK_DECL(getnetbyname_r,
 	    [
 		AC_MSG_RESULT(no)
 
-		AC_MSG_CHECKING([for Solaris/IRIX getnetbyname_r()])
+		AC_MSG_CHECKING([for Solaris getnetbyname_r()])
 		AC_LINK_IFELSE([AC_LANG_PROGRAM(
 		    [[#include <netdb.h>]],
 		    [[
@@ -312,8 +312,8 @@ AC_CHECK_DECL(getnetbyname_r,
 		    ]])],
 		    [
 			AC_MSG_RESULT(yes)
-			AC_DEFINE(HAVE_SOLARIS_IRIX_GETNETBYNAME_R, 1,
-			    [define if we have the Solaris/IRIX getnetbyname_r()])
+			AC_DEFINE(HAVE_SOLARIS_GETNETBYNAME_R, 1,
+			    [define if we have the Solaris getnetbyname_r()])
 		    ],
 		    [
 			AC_MSG_RESULT(no)
@@ -341,7 +341,7 @@ AC_CHECK_DECL(getnetbyname_r,
 
 #
 # Check for reentrant versions of getprotobyname_r(), as provided by
-# Linux (glibc), Solaris/IRIX, and AIX (with three different APIs!).
+# Linux (glibc), Solaris, and AIX (with three different APIs!).
 # If we don't find one, we just use getprotobyname(), which uses
 # thread-specific data on many platforms, but doesn't use it on
 # NetBSD or OpenBSD, and may not use it on older versions of other
@@ -372,7 +372,7 @@ AC_CHECK_DECL(getprotobyname_r,
 	    [
 		AC_MSG_RESULT(no)
 
-		AC_MSG_CHECKING([for Solaris/IRIX getprotobyname_r()])
+		AC_MSG_CHECKING([for Solaris getprotobyname_r()])
 		AC_LINK_IFELSE([AC_LANG_PROGRAM(
 		    [[#include <netdb.h>]],
 		    [[
@@ -383,8 +383,8 @@ AC_CHECK_DECL(getprotobyname_r,
 		    ]])],
 		    [
 			AC_MSG_RESULT(yes)
-			AC_DEFINE(HAVE_SOLARIS_IRIX_GETPROTOBYNAME_R, 1,
-			    [define if we have the Solaris/IRIX getprotobyname_r()])
+			AC_DEFINE(HAVE_SOLARIS_GETPROTOBYNAME_R, 1,
+			    [define if we have the Solaris getprotobyname_r()])
 		    ],
 		    [
 			AC_MSG_RESULT(no)
@@ -733,9 +733,7 @@ else
 			[ac_cv_lbl_bpf_h_defines_biocsetif=no]))
 		AC_MSG_RESULT($ac_cv_lbl_bpf_h_defines_biocsetif)
 	fi
-	AC_CHECK_HEADERS(net/pfilt.h net/enet.h)
-	AC_CHECK_HEADERS(net/nit.h sys/net/nit.h)
-	AC_CHECK_HEADERS(linux/socket.h net/raw.h sys/dlpi.h)
+	AC_CHECK_HEADERS(linux/socket.h sys/dlpi.h)
 	AC_CHECK_HEADERS(config/HaikuConfig.h)
 	AC_CHECK_HEADERS(hurd.h)
 
@@ -764,31 +762,6 @@ else
 		#
 		V_PCAP=linux
 		VALGRINDTEST_SRC=valgrindtest.c
-	elif test "$ac_cv_header_net_pfilt_h" = yes; then
-		#
-		# DEC OSF/1, Digital UNIX, Tru64 UNIX
-		#
-		V_PCAP=pf
-	elif test "$ac_cv_header_net_enet_h" = yes; then
-		#
-		# Stanford Enetfilter.
-		#
-		V_PCAP=enet
-	elif test "$ac_cv_header_net_nit_h" = yes; then
-		#
-		# SunOS 4.x STREAMS NIT.
-		#
-		V_PCAP=snit
-	elif test "$ac_cv_header_sys_net_nit_h" = yes; then
-		#
-		# Pre-SunOS 4.x non-STREAMS NIT.
-		#
-		V_PCAP=nit
-	elif test "$ac_cv_header_net_raw_h" = yes; then
-		#
-		# IRIX snoop.
-		#
-		V_PCAP=snoop
 	elif test "$ac_cv_header_sys_dlpi_h" = yes; then
 		#
 		# DLPI on pre-Solaris 11 SunOS 5, HP-UX, possibly others.
@@ -972,13 +945,6 @@ dlpi)
 	    ])
 	;;
 
-enet)
-	#
-	# Capture module
-	#
-	PLATFORM_C_SRC="pcap-enet.c"
-	;;
-
 haiku)
 	#
 	# Capture module
@@ -1134,27 +1100,6 @@ bpf)
 	else
 		AC_MSG_RESULT(no)
 	fi
-	;;
-
-pf)
-	#
-	# Capture module
-	#
-	PLATFORM_C_SRC="pcap-pf.c"
-	;;
-
-snit)
-	#
-	# Capture module
-	#
-	PLATFORM_C_SRC="pcap-snit.c"
-	;;
-
-snoop)
-	#
-	# Capture module
-	#
-	PLATFORM_C_SRC="pcap-snoop.c"
 	;;
 
 hurd)
@@ -2358,35 +2303,8 @@ darwin*)
 	fi
 	;;
 
-hpux9*)
-	AC_DEFINE(HAVE_HPUX9,1,[on HP-UX 9.x])
-
-	#
-	# Use System V conventions for man pages.
-	#
-	MAN_ADMIN_COMMANDS=1m
-	MAN_FILE_FORMATS=4
-	MAN_MISC_INFO=5
-	;;
-
-hpux10.0*)
-
-	#
-	# Use System V conventions for man pages.
-	#
-	MAN_ADMIN_COMMANDS=1m
-	MAN_FILE_FORMATS=4
-	MAN_MISC_INFO=5
-	;;
-
-hpux10.1*)
-
-	#
-	# Use System V conventions for man pages.
-	#
-	MAN_ADMIN_COMMANDS=1m
-	MAN_FILE_FORMATS=4
-	MAN_MISC_INFO=5
+hpux9*|hpux10.[01]*)
+	AC_MSG_ERROR([HP-UX version must be 10.20 or later, not $host_os])
 	;;
 
 hpux*)
@@ -2416,32 +2334,8 @@ hpux*)
 	MAN_MISC_INFO=5
 	;;
 
-irix*)
-	#
-	# Use IRIX conventions for man pages; they're the same as the
-	# System V conventions, except that they use section 8 for
-	# administrative commands and daemons.
-	#
-	MAN_FILE_FORMATS=4
-	MAN_MISC_INFO=5
-	;;
-
 linux*|freebsd*|netbsd*|openbsd*|dragonfly*|kfreebsd*|gnu*|haiku*|midipix*)
 	DYEXT="so"
-	;;
-
-osf*)
-	DYEXT="so"
-
-	#
-	# DEC OSF/1, a/k/a Digital UNIX, a/k/a Tru64 UNIX.
-	# Use Tru64 UNIX conventions for man pages; they're the same as
-	# the System V conventions except that they use section 8 for
-	# administrative commands and daemons.
-	#
-	MAN_FILE_FORMATS=4
-	MAN_MISC_INFO=5
-	MAN_DEVICES=7
 	;;
 
 solaris*)
@@ -3141,12 +3035,6 @@ fi
 #
 # With the HP-UX linker, directories specified with -L are, by default,
 # added to the run-time search path, so we don't need to supply them.
-#
-# For Tru64 UNIX, "-rpath" works with DEC's^WCompaq's^WHP's C compiler
-# for Alpha, but isn't documented as working with GCC, and no GCC-
-# compatible option is documented as working with the DEC compiler.
-# If anybody needs this on Tru64/Alpha, they're welcome to figure out a
-# way to make it work.
 #
 # This must *not* depend on the compiler, as, on platforms where there's
 # a GCC-compatible compiler and a vendor compiler, we need to work with

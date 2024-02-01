@@ -925,7 +925,7 @@ endif(WIN32)
 
 #
 # Check for reentrant versions of getnetbyname_r(), as provided by
-# Linux (glibc), Solaris/IRIX, and AIX (with three different APIs!).
+# Linux (glibc), Solaris, and AIX (with three different APIs!).
 # If we don't find one, we just use getnetbyname(), which uses
 # thread-specific data on many platforms, but doesn't use it on
 # NetBSD or OpenBSD, and may not use it on older versions of other
@@ -968,8 +968,8 @@ main(void)
     return getnetbyname_r((const char *)0, &netent_buf, buf, (int)sizeof buf) != NULL;
 }
 "
-            HAVE_SOLARIS_IRIX_GETNETBYNAME_R)
-        if(NOT HAVE_SOLARIS_IRIX_GETNETBYNAME_R)
+            HAVE_SOLARIS_GETNETBYNAME_R)
+        if(NOT HAVE_SOLARIS_GETNETBYNAME_R)
             check_c_source_compiles(
 "#include <netdb.h>
 
@@ -983,14 +983,14 @@ main(void)
 }
 "
                 HAVE_AIX_GETNETBYNAME_R)
-        endif(NOT HAVE_SOLARIS_IRIX_GETNETBYNAME_R)
+        endif(NOT HAVE_SOLARIS_GETNETBYNAME_R)
     endif(NOT HAVE_LINUX_GETNETBYNAME_R)
 endif(NETDB_H_DECLARES_GETNETBYNAME_R)
 cmake_pop_check_state()
 
 #
 # Check for reentrant versions of getprotobyname_r(), as provided by
-# Linux (glibc), Solaris/IRIX, and AIX (with three different APIs!).
+# Linux (glibc), Solaris, and AIX (with three different APIs!).
 # If we don't find one, we just use getprotobyname(), which uses
 # thread-specific data on many platforms, but doesn't use it on
 # NetBSD or OpenBSD, and may not use it on older versions of other
@@ -1032,8 +1032,8 @@ main(void)
     return getprotobyname_r((const char *)0, &protoent_buf, buf, (int)sizeof buf) != NULL;
 }
 "
-            HAVE_SOLARIS_IRIX_GETPROTOBYNAME_R)
-        if(NOT HAVE_SOLARIS_IRIX_GETPROTOBYNAME_R)
+            HAVE_SOLARIS_GETPROTOBYNAME_R)
+        if(NOT HAVE_SOLARIS_GETPROTOBYNAME_R)
             check_c_source_compiles(
 "#include <netdb.h>
 
@@ -1047,7 +1047,7 @@ main(void)
 }
 "
                 HAVE_AIX_GETPROTOBYNAME_R)
-        endif(NOT HAVE_SOLARIS_IRIX_GETPROTOBYNAME_R)
+        endif(NOT HAVE_SOLARIS_GETPROTOBYNAME_R)
     endif(NOT HAVE_LINUX_GETPROTOBYNAME_R)
 endif(NETDB_H_DECLARES_GETPROTOBYNAME_R)
 cmake_pop_check_state()
@@ -1887,12 +1887,7 @@ else()
                 check_symbol_exists(BIOCSETIF "sys/types.h;sys/time.h;sys/ioctl.h;sys/socket.h;net/bpf.h;net/if.h" BPF_H_DEFINES_BIOCSETIF)
             endif(HAVE_SYS_IOCCOM_H)
         endif(HAVE_NET_BPF_H)
-        check_include_file(net/pfilt.h HAVE_NET_PFILT_H)
-        check_include_file(net/enet.h HAVE_NET_ENET_H)
-        check_include_file(net/nit.h HAVE_NET_NIT_H)
-        check_include_file(sys/net/nit.h HAVE_SYS_NET_NIT_H)
         check_include_file(linux/socket.h HAVE_LINUX_SOCKET_H)
-        check_include_file(net/raw.h HAVE_NET_RAW_H)
         check_include_file(sys/dlpi.h HAVE_SYS_DLPI_H)
         check_include_file(config/HaikuConfig.h HAVE_CONFIG_HAIKUCONFIG_H)
 
@@ -1908,31 +1903,6 @@ else()
             # No prizes for guessing this one.
             #
             set(PCAP_TYPE linux)
-        elseif(HAVE_NET_PFILT_H)
-            #
-            # DEC OSF/1, Digital UNIX, Tru64 UNIX
-            #
-            set(PCAP_TYPE pf)
-        elseif(HAVE_NET_ENET_H)
-            #
-            # Stanford Enetfilter.
-            #
-            set(PCAP_TYPE enet)
-        elseif(HAVE_NET_NIT_H)
-            #
-            # SunOS 4.x STREAMS NIT.
-            #
-            set(PCAP_TYPE snit)
-        elseif(HAVE_SYS_NET_NIT_H)
-            #
-            # Pre-SunOS 4.x non-STREAMS NIT.
-            #
-            set(PCAP_TYPE nit)
-        elseif(HAVE_NET_RAW_H)
-            #
-            # IRIX snoop.
-            #
-            set(PCAP_TYPE snoop)
         elseif(HAVE_SYS_DLPI_H)
             #
             # DLPI on pre-Solaris 11 SunOS 5, HP-UX, possibly others.
@@ -3036,19 +3006,16 @@ if(CMAKE_SYSTEM_NAME STREQUAL "AIX")
         set(LIBS_PRIVATE "${LIBS_PRIVATE} -lodm -lcfg")
     endif()
 elseif(CMAKE_SYSTEM_NAME STREQUAL "HP-UX")
-    if(CMAKE_SYSTEM_VERSION MATCHES "[A-Z.]*9\.[0-9]*")
+    if(
+       CMAKE_SYSTEM_VERSION MATCHES "[A-Z.]*9\.[0-9]*"
+       OR CMAKE_SYSTEM_VERSION MATCHES "[A-Z.]*10\.[01]"
+    )
         #
         # HP-UX 9.x.
-        #
-        set(HAVE_HPUX9 TRUE)
-    elseif(CMAKE_SYSTEM_VERSION MATCHES "[A-Z.]*10\.0")
-        #
         # HP-UX 10.0.
-        #
-    elseif(CMAKE_SYSTEM_VERSION MATCHES "[A-Z.]*10\.1")
-        #
         # HP-UX 10.1.
         #
+        message(FATAL_ERROR \"HP-UX version must be 10.20 or later, not \${CMAKE_SYSTEM_VERSION}\")
     else()
         #
         # HP-UX 10.20 and later.
@@ -3062,24 +3029,6 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "HP-UX")
     set(MAN_ADMIN_COMMANDS 1m)
     set(MAN_FILE_FORMATS 4)
     set(MAN_MISC_INFO 5)
-elseif(CMAKE_SYSTEM_NAME STREQUAL "IRIX" OR CMAKE_SYSTEM_NAME STREQUAL "IRIX64")
-    #
-    # Use IRIX conventions for man pages; they're the same as the
-    # System V conventions, except that they use section 8 for
-    # administrative commands and daemons.
-    #
-    set(MAN_FILE_FORMATS 4)
-    set(MAN_MISC_INFO 5)
-elseif(CMAKE_SYSTEM_NAME STREQUAL "OSF1")
-    #
-    # DEC OSF/1, a/k/a Digital UNIX, a/k/a Tru64 UNIX.
-    # Use Tru64 UNIX conventions for man pages; they're the same as the
-    # System V conventions except that they use section 8 for
-    # administrative commands and daemons.
-    #
-    set(MAN_FILE_FORMATS 4)
-    set(MAN_MISC_INFO 5)
-    set(MAN_DEVICES 7)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "SunOS" AND CMAKE_SYSTEM_VERSION MATCHES "5[.][0-9.]*")
     #
     # SunOS 5.x.
@@ -3493,12 +3442,6 @@ if(NOT MSVC)
     # With the HP-UX linker, directories specified with -L are, by
     # default, added to the run-time search path, so we don't need to
     # supply them.
-    #
-    # For Tru64 UNIX, "-rpath" works with DEC's^WCompaq's^WHP's C
-    # compiler for Alpha, but isn't documented as working with GCC, and
-    # no GCC-compatible option is documented as working with the DEC
-    # compiler.  If anybody needs this on Tru64/Alpha, they're welcome
-    # to figure out a way to make it work.
     #
     # This must *not* depend on the compiler, as, on platforms where
     # there's a GCC-compatible compiler and a vendor compiler, we need

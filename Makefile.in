@@ -314,7 +314,6 @@ EXTRA_DIST = \
 	pcap-dlpi.c \
 	pcap-dpdk.c \
 	pcap-dpdk.h \
-	pcap-enet.c \
 	pcap-haiku.c \
 	pcap-hurd.c \
 	pcap-int.h \
@@ -325,14 +324,11 @@ EXTRA_DIST = \
 	pcap-netfilter-linux.h \
 	pcap-netmap.c \
 	pcap-netmap.h \
-	pcap-nit.c \
 	pcap-npf.c \
 	pcap-null.c \
-	pcap-pf.c \
 	pcap-rdmasniff.c \
 	pcap-rdmasniff.h \
 	pcap-rpcap.c \
-	pcap-rpcap-int.h \
 	pcap-septel.c \
 	pcap-septel.h \
 	pcap-sita.h \
@@ -340,8 +336,6 @@ EXTRA_DIST = \
 	pcap-sita.html \
 	pcap-snf.c \
 	pcap-snf.h \
-	pcap-snit.c \
-	pcap-snoop.c \
 	pcap-tc.c \
 	pcap-tc.h \
 	pcap-usb-linux.c \
@@ -905,4 +899,4 @@ depend:	$(GENERATED_C_SRC) $(GENHDR)
 	(cd testprogs; $(MAKE) depend)
 
 shellcheck:
-	shellcheck -f gcc -e SC2006 build.sh build_matrix.sh build_common.sh .ci-coverity-scan-build.sh
+	shellcheck -f gcc -e SC2006 autogen.sh build.sh build_matrix.sh build_common.sh .ci-coverity-scan-build.sh

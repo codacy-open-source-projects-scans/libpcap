@@ -125,32 +125,22 @@ See [this file](doc/README.solaris.md) for more up to date
 Solaris-related information.
 
 ## HP-UX specifics
-If you use HP-UX, you must have at least version 9 and either the
+If you use HP-UX, you must have at least version 10.20 and either the
 version of `cc` that supports C99 (`cc -AC99`) or else use the GNU C
-compiler. You must also buy the optional streams package. If you don't
-have:
-
-    /usr/include/sys/dlpi.h
-    /usr/include/sys/dlpi_ext.h
-
-then you don't have the streams package. In addition, we believe you
-need to install the "9.X LAN and DLPI drivers cumulative" patch
-(PHNE_6855) to make the version 9 DLPI work with libpcap.
-
-The DLPI streams package is standard starting with HP-UX 10.
+compiler.  The required DLPI streams package is standard starting with
+HP-UX 10.
 
 The HP implementation of DLPI is a little bit eccentric. Unlike
 Solaris, you must attach `/dev/dlpi` instead of the specific `/dev/*`
 network pseudo device entry in order to capture packets. The PPA is
-based on the ifnet "index" number. Under HP-UX 9, it is necessary to
-read `/dev/kmem` and the kernel symbol file (`/hp-ux`). Under HP-UX 10,
+based on the ifnet "index" number.  Under HP-UX 10,
 DLPI can provide information for determining the PPA. It does not seem
 to be possible to trace the loopback interface. Unlike other DLPI
 implementations, PHYS implies MULTI and SAP and you get an error if you
 try to enable more than one promiscuous mode at a time.
 
-It is impossible to capture outbound packets on HP-UX 9.  To do so on
-HP-UX 10, you will, apparently, need a late "LAN products cumulative
+To capture outbound packets on HP-UX 10, you will, apparently, need a
+late "LAN products cumulative
 patch" (at one point, it was claimed that this would be PHNE_18173 for
 s700/10.20; at another point, it was claimed that the required patches
 were PHNE_20892, PHNE_20725 and PHCO_10947, or newer patches), and to do
@@ -198,7 +188,7 @@ in `/usr/include/sys/dlpi.h`, and find the corresponding value.
 	CONTRIBUTING.md	    - guidelines for contributing
 	CREDITS		    - people that have helped libpcap along
 	INSTALL.md	    - this file
-	LICENSE		    - the license under which tcpdump is distributed
+	LICENSE		    - the license under which libpcap is distributed
 	Makefile.in	    - compilation rules (input to the configure script)
 	README.md	    - description of distribution
 	doc/README.aix	    - notes on using libpcap on AIX
@@ -280,10 +270,8 @@ in `/usr/include/sys/dlpi.h`, and find the corresponding value.
 	pcap-dbus.c	    - D-Bus capture support
 	pcap-dbus.h	    - D-Bus capture support
 	pcap-dlpi.c	    - Data Link Provider Interface support
-	pcap-dos.c	    - removed in 2023, after libpcap 1.10
 	pcap-dpdk.c	    - DPDK device support
 	pcap-dpdk.h	    - DPDK device support
-	pcap-enet.c	    - enet support
 	pcap-hurd.c	    - GNU Hurd support
 	pcap-int.h	    - internal libpcap definitions
 	pcap-libdlpi.c	    - Data Link Provider Interface support for systems with libdlpi
@@ -293,10 +281,8 @@ in `/usr/include/sys/dlpi.h`, and find the corresponding value.
 	pcap-netfilter-linux.h - Linux netfilter support
 	pcap-netmap.c	    - netmap support
 	pcap-netmap.h	    - netmap support
-	pcap-nit.c	    - SunOS Network Interface Tap support
 	pcap-npf.c	    - Npcap capture support
 	pcap-null.c	    - dummy monitor support (allows offline use of libpcap)
-	pcap-pf.c	    - Ultrix and Digital/Tru64 UNIX Packet Filter support
 	pcap-rdmasniff.c    - RDMA/InfiniBand capture support
 	pcap-rdmasniff.h    - RDMA/InfiniBand capture support
 	pcap-rpcap.c	    - RPCAP protocol capture support
@@ -308,8 +294,6 @@ in `/usr/include/sys/dlpi.h`, and find the corresponding value.
 	pcap-sita.html	    - SITA device capture documentation
 	pcap-snf.c	    - Myricom SNF device capture support
 	pcap-snf.h	    - Myricom SNF device capture support
-	pcap-snit.c	    - SunOS 4.x STREAMS-based Network Interface Tap support
-	pcap-snoop.c	    - IRIX Snoop network monitoring support
 	pcap-tc.c	    - TurboCap device capture support
 	pcap-tc.h	    - TurboCap device capture support
 	pcap-types.h	    - header for OS-specific type includes
