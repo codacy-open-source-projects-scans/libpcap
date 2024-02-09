@@ -217,6 +217,7 @@ in `/usr/include/sys/dlpi.h`, and find the corresponding value.
 	dlpisubs.c	    - DLPI-related functions for pcap-dlpi.c and pcap-libdlpi.c
 	dlpisubs.h	    - DLPI-related function declarations
 	etherent.c	    - /etc/ethers support routines
+	extract.h	    - Alignment definitions
 	ethertype.h	    - Ethernet protocol types and names definitions
 	fad-getad.c	    - pcap_findalldevs() for systems with getifaddrs()
 	fad-gifc.c	    - pcap_findalldevs() for systems with only SIOCGIFLIST
@@ -231,6 +232,7 @@ in `/usr/include/sys/dlpi.h`, and find the corresponding value.
 	grammar.y	    - filter string grammar
 	ieee80211.h	    - 802.11 definitions
 	install-sh	    - BSD style install script
+	instrument-functions.c - functions instrumentation calls for entry/exit
 	lbl/os-*.h	    - OS-dependent defines and prototypes (if any)
 	llc.h		    - 802.2 LLC SAP definitions
 	missing/*	    - replacements for missing library functions
@@ -272,6 +274,7 @@ in `/usr/include/sys/dlpi.h`, and find the corresponding value.
 	pcap-dlpi.c	    - Data Link Provider Interface support
 	pcap-dpdk.c	    - DPDK device support
 	pcap-dpdk.h	    - DPDK device support
+	pcap-haiku.c	    - Haiku capture support
 	pcap-hurd.c	    - GNU Hurd support
 	pcap-int.h	    - internal libpcap definitions
 	pcap-libdlpi.c	    - Data Link Provider Interface support for systems with libdlpi
@@ -309,6 +312,8 @@ in `/usr/include/sys/dlpi.h`, and find the corresponding value.
 	pcap_*.3pcap	    - manual entries for library functions
 	pcap-filter.manmisc.in   - manual entry for filter syntax
 	pcap-linktype.manmisc.in - manual entry for link-layer header types
+	pflog.h		    - header for DLT_PFLOG handling in filter code
+	portability.h	    - Portability declarations/definitions
 	ppp.h		    - Point to Point Protocol definitions
 	rpcap-protocol.c    - RPCAP client/server common routines
 	rpcap-protocol.h    - RPCAP client/server common prototypes
