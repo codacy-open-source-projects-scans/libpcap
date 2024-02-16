@@ -369,6 +369,7 @@ EXTRA_DIST = \
 	scanner.l \
 	testprogs/CMakeLists.txt \
 	testprogs/Makefile.in \
+	testprogs/activatetest.c \
 	testprogs/can_set_rfmon_test.c \
 	testprogs/capturetest.c \
 	testprogs/filtertest.c \
@@ -899,4 +900,4 @@ depend:	$(GENERATED_C_SRC) $(GENHDR)
 	(cd testprogs; $(MAKE) depend)
 
 shellcheck:
-	shellcheck -f gcc -e SC2006 autogen.sh build.sh build_matrix.sh build_common.sh .ci-coverity-scan-build.sh
+	shellcheck -f gcc -e SC2006 autogen.sh build.sh build_matrix.sh build_common.sh mkdep .ci-coverity-scan-build.sh

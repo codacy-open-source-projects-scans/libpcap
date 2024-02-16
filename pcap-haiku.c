@@ -31,7 +31,6 @@
  */
 struct pcap_haiku {
 	struct pcap_stat	stat;
-	char	*device;	/* device name */
 };
 
 
@@ -57,10 +56,8 @@ pcap_read_haiku(pcap_t* handle, int maxPackets _U_, pcap_handler callback,
 	ssize_t bytesReceived;
 	do {
 		if (handle->break_loop) {
-			// Clear the break loop flag, and return -2 to indicate our
-			// reasoning
 			handle->break_loop = 0;
-			return -2;
+			return PCAP_ERROR_BREAK;
 		}
 
 		socklen_t fromLength = sizeof(from);
@@ -74,9 +71,9 @@ pcap_read_haiku(pcap_t* handle, int maxPackets _U_, pcap_handler callback,
 			return 0;
 		}
 
-		snprintf(handle->errbuf, sizeof(handle->errbuf),
-			"recvfrom: %s", strerror(errno));
-		return -1;
+		pcapint_fmt_errmsg_for_errno(handle->errbuf, PCAP_ERRBUF_SIZE,
+		    errno, "recvfrom");
+		return PCAP_ERROR;
 	}
 
 	int32_t captureLength = bytesReceived;
@@ -114,7 +111,7 @@ pcap_inject_haiku(pcap_t *handle, const void *buffer _U_, int size _U_)
 	// inject the packets
 	strlcpy(handle->errbuf, "Sending packets isn't supported yet",
 		PCAP_ERRBUF_SIZE);
-	return -1;
+	return PCAP_ERROR;
 }
 
 
@@ -125,14 +122,14 @@ pcap_stats_haiku(pcap_t *handle, struct pcap_stat *stats)
 	struct ifreq request;
 	int pcapSocket = socket(AF_INET, SOCK_DGRAM, 0);
 	if (pcapSocket < 0) {
-		return -1;
+		return PCAP_ERROR;
 	}
-	prepare_request(&request, handlep->device);
+	prepare_request(&request, handle->opt.device);
 	if (ioctl(pcapSocket, SIOCGIFSTATS, &request, sizeof(struct ifreq)) < 0) {
-		snprintf(handle->errbuf, PCAP_ERRBUF_SIZE, "pcap_stats: %s",
-			strerror(errno));
+		pcapint_fmt_errmsg_for_errno(handle->errbuf, PCAP_ERRBUF_SIZE,
+		    errno, "pcap_stats");
 		close(pcapSocket);
-		return -1;
+		return PCAP_ERROR;
 	}
 
 	close(pcapSocket);
@@ -146,10 +143,54 @@ pcap_stats_haiku(pcap_t *handle, struct pcap_stat *stats)
 static int
 pcap_activate_haiku(pcap_t *handle)
 {
-	struct pcap_haiku* handlep = (struct pcap_haiku*)handle->priv;
+	// TODO: handle promiscuous mode!
 
-	const char* device = handle->opt.device;
+	// we need a socket to talk to the networking stack
+	int pcapSocket = socket(AF_INET, SOCK_DGRAM, 0);
+	if (pcapSocket < 0) {
+		snprintf(handle->errbuf, PCAP_ERRBUF_SIZE,
+		         "The networking stack doesn't seem to be available.");
+		return PCAP_ERROR;
+	}
 
+	struct ifreq request;
+	if (!prepare_request(&request, handle->opt.device)) {
+		snprintf(handle->errbuf, PCAP_ERRBUF_SIZE,
+		         "Interface name \"%s\" is too long.", handle->opt.device);
+		close(pcapSocket);
+		return PCAP_ERROR;
+	}
+
+	// check if the interface exist
+	if (ioctl(pcapSocket, SIOCGIFINDEX, &request, sizeof(request)) < 0) {
+		snprintf(handle->errbuf, PCAP_ERRBUF_SIZE,
+		         "Interface \"%s\" does not exist.", handle->opt.device);
+		close(pcapSocket);
+		return PCAP_ERROR_NO_SUCH_DEVICE;
+	}
+
+	close(pcapSocket);
+	// no longer needed after this point
+
+	// get link level interface for this interface
+
+	pcapSocket = socket(AF_LINK, SOCK_DGRAM, 0);
+	if (pcapSocket < 0) {
+		pcapint_fmt_errmsg_for_errno(handle->errbuf, PCAP_ERRBUF_SIZE,
+		    errno, "No link level");
+		return PCAP_ERROR;
+	}
+
+	// start monitoring
+	if (ioctl(pcapSocket, SIOCSPACKETCAP, &request, sizeof(struct ifreq)) < 0) {
+		pcapint_fmt_errmsg_for_errno(handle->errbuf, PCAP_ERRBUF_SIZE,
+		    errno, "Cannot start monitoring");
+		close(pcapSocket);
+		return PCAP_ERROR;
+	}
+
+	handle->selectable_fd = pcapSocket;
+	handle->fd = pcapSocket;
 	handle->read_op = pcap_read_haiku;
 	handle->setfilter_op = pcapint_install_bpf_program; /* no kernel filtering */
 	handle->inject_op = pcap_inject_haiku;
@@ -170,13 +211,6 @@ pcap_activate_haiku(pcap_t *handle)
 	if (handle->snapshot <= 0 || handle->snapshot > MAXIMUM_SNAPLEN)
 		handle->snapshot = MAXIMUM_SNAPLEN;
 
-	handlep->device	= strdup(device);
-	if (handlep->device == NULL) {
-		pcapint_fmt_errmsg_for_errno(handle->errbuf, PCAP_ERRBUF_SIZE,
-			errno, "strdup");
-		return PCAP_ERROR;
-	}
-
 	handle->bufsize = 65536;
 	// TODO: should be determined by interface MTU
 
@@ -185,6 +219,7 @@ pcap_activate_haiku(pcap_t *handle)
 	if (handle->buffer == NULL) {
 		pcapint_fmt_errmsg_for_errno(handle->errbuf, PCAP_ERRBUF_SIZE,
 			errno, "buffer malloc");
+		close(pcapSocket);
 		return PCAP_ERROR;
 	}
 
@@ -200,66 +235,15 @@ pcap_activate_haiku(pcap_t *handle)
 
 
 pcap_t *
-pcapint_create_interface(const char *device, char *errorBuffer)
+pcapint_create_interface(const char *device _U_, char *errorBuffer)
 {
-	// TODO: handle promiscuous mode!
-
-	// we need a socket to talk to the networking stack
-	int pcapSocket = socket(AF_INET, SOCK_DGRAM, 0);
-	if (pcapSocket < 0) {
-		snprintf(errorBuffer, PCAP_ERRBUF_SIZE,
-			"The networking stack doesn't seem to be available.\n");
-		return NULL;
-	}
-
-	struct ifreq request;
-	if (!prepare_request(&request, device)) {
-		snprintf(errorBuffer, PCAP_ERRBUF_SIZE,
-			"Interface name \"%s\" is too long.", device);
-		close(pcapSocket);
-		return NULL;
-	}
-
-	// check if the interface exist
-	if (ioctl(pcapSocket, SIOCGIFINDEX, &request, sizeof(request)) < 0) {
-		snprintf(errorBuffer, PCAP_ERRBUF_SIZE,
-			"Interface \"%s\" does not exist.\n", device);
-		close(pcapSocket);
-		return NULL;
-	}
-
-	close(pcapSocket);
-	// no longer needed after this point
-
-	// get link level interface for this interface
-
-	pcapSocket = socket(AF_LINK, SOCK_DGRAM, 0);
-	if (pcapSocket < 0) {
-		snprintf(errorBuffer, PCAP_ERRBUF_SIZE, "No link level: %s\n",
-			strerror(errno));
-		return NULL;
-	}
-
-	// start monitoring
-	if (ioctl(pcapSocket, SIOCSPACKETCAP, &request, sizeof(struct ifreq)) < 0) {
-		snprintf(errorBuffer, PCAP_ERRBUF_SIZE, "Cannot start monitoring: %s\n",
-			strerror(errno));
-		close(pcapSocket);
-		return NULL;
-	}
-
 	pcap_t* handle = PCAP_CREATE_COMMON(errorBuffer, struct pcap_haiku);
 	if (handle == NULL) {
-		snprintf(errorBuffer, PCAP_ERRBUF_SIZE, "malloc: %s", strerror(errno));
-		close(pcapSocket);
+		pcapint_fmt_errmsg_for_errno(errorBuffer, PCAP_ERRBUF_SIZE,
+		    errno, "malloc");
 		return NULL;
 	}
-
-	handle->selectable_fd = pcapSocket;
-	handle->fd = pcapSocket;
-
 	handle->activate_op = pcap_activate_haiku;
-
 	return handle;
 }
 
