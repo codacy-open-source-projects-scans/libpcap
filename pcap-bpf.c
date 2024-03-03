@@ -112,6 +112,7 @@ static int bpf_load(char *errbuf);
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <stddef.h>
 
 #ifdef SIOCGIFMEDIA
 # include <net/if_media.h>
@@ -656,7 +657,7 @@ bpf_bind(int fd, const char *name, char *errbuf)
 	 */
 	if ((zonesep = strchr(name, '/')) != NULL) {
 		char *zname;
-		int  znamelen;
+		ptrdiff_t znamelen;
 
 		if (ifr.lifr_zoneid != GLOBAL_ZONEID) {
 			/*
@@ -1164,8 +1165,12 @@ pcap_stats_bpf(pcap_t *p, struct pcap_stat *ps)
 		return (PCAP_ERROR);
 	}
 
-	ps->ps_recv = s.bs_recv;
-	ps->ps_drop = s.bs_drop;
+	/*
+	 * On illumos, NetBSD and Solaris these values are 64-bit, but struct
+	 * pcap_stat is what it is, so the integer precision loss is expected.
+	 */
+	ps->ps_recv = (u_int)s.bs_recv;
+	ps->ps_drop = (u_int)s.bs_drop;
 	ps->ps_ifdrop = 0;
 	return (0);
 }
@@ -1397,7 +1402,13 @@ pcap_read_bpf(pcap_t *p, int cnt, pcap_handler callback, u_char *user)
 			 */
 			pkthdr.ts.tv_usec = bhp->bh_tstamp.tv_usec/1000;
 #else
-			pkthdr.ts.tv_usec = bhp->bh_tstamp.tv_usec;
+			/*
+			 * On NetBSD the former (timeval.tv_usec) is an int via
+			 * suseconds_t and the latter (bpf_timeval.tv_usec) is
+			 * a long.  In any case, the value is supposed to be
+			 * within the [0 .. 999999] interval.
+			 */
+			pkthdr.ts.tv_usec = (suseconds_t)bhp->bh_tstamp.tv_usec;
 #endif
 #endif /* BIOCSTSTAMP */
 #ifdef PCAP_FDDIPAD
