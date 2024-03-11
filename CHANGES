@@ -31,6 +31,7 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
         another incorporate-remote-capture project. (issue #1120)
     Documentation:
       Document a standard format for writing out BPF filter programs.
+      Explain "other addresses" in pcap_findalldevs(3PCAP).
     Building and testing:
       Apply GNU Hurd support patch from the Debian package.
       CI: Introduce and use LIBPCAP_CMAKE_TAINTED.
@@ -42,13 +43,17 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
         SunOS 3.x, 4.x and 5.x before 5.3.2, and Ultrix.
       Add a new test program for pcap_activate().
       Make NetBSD build warning-free.
+      Make Sun C build warning-free.
+      Make FreeBSD, Linux and macOS builds warning-free.
+      Fix propagation of cc_werr_cflags() output.
+      Print MAC addresses in findalldevstest.
     Hurd:
       Support network capture devices too.
       Fix a few device activation bugs.
       Count and timestamp packets better.
       Add kernel filtering, fix userland filtering.
-    Haiku:
-      Report IEEE 802.11 as PCAP_IF_WIRELESS.
+    Solaris:
+      Fix AF_LINK handling on illumos.
 
 DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
   Summary for 1.10.5 libpcap release (so far!)
@@ -112,6 +117,7 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       Improve connection status reporting.
       Add support for promiscuous mode.
       Detect DLTs and loopback capture support at run time.
+      Report IEEE 802.11 as PCAP_IF_WIRELESS.
     Windows:
       Fix internal handling of "not supported" error codes from NPF.
       Work around a bug in Npcap 1.00 in case of driver version mismatch.

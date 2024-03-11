@@ -1065,7 +1065,6 @@ if(WIN32)
 else(WIN32)
     set(CMAKE_EXTRA_INCLUDE_FILES unistd.h sys/socket.h)
 endif(WIN32)
-check_type_size("struct sockaddr_storage" STRUCT_SOCKADDR_STORAGE)
 check_type_size("socklen_t" SOCKLEN_T)
 cmake_pop_check_state()
 
@@ -2793,6 +2792,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/.devel OR EXISTS ${CMAKE_BINARY_DIR}/.deve
         check_and_add_compiler_option(-Wshorten-64-to-32)
         check_and_add_compiler_option(-Wsign-compare)
         check_and_add_compiler_option(-Wstrict-prototypes)
+        check_and_add_compiler_option(-Wundef)
         check_and_add_compiler_option(-Wunreachable-code)
         check_and_add_compiler_option(-Wunused-but-set-parameter)
         check_and_add_compiler_option(-Wunused-but-set-variable)
@@ -2856,9 +2856,13 @@ endif(NOT MSVC)
 # usage: cmake -DEXTRA_CFLAGS='-Wall -Wextra -Werror' ...
 #
 if(NOT "${EXTRA_CFLAGS}" STREQUAL "")
-    foreach(_extra_cflag ${EXTRA_CFLAGS})
-        check_and_add_compiler_option("${_extra_cflag}")
-    endforeach(_extra_cflag)
+    # The meaning of EXTRA_CFLAGS is "use the exact specified options, or the
+    # build risks failing to fail", not "try every specified option, omit those
+    # that do not work and use the rest".  Thus use add_compile_options(), not
+    # foreach()/check_and_add_compiler_option().  Another reason to do that is
+    # that the effect lasts in testprogs/ and testprogs/fuzz/.
+    string(REPLACE " " ";" _extra_cflags_list ${EXTRA_CFLAGS})
+    add_compile_options(${_extra_cflags_list})
     message(STATUS "Added extra compile options (${EXTRA_CFLAGS})")
 endif()
 

@@ -29,17 +29,17 @@ print_cc_version
 # later warnings in the same matrix subset trigger an error.
 # shellcheck disable=SC2221,SC2222
 case `cc_id`/`os_id` in
-suncc-5.1[45]/SunOS-5.11)
-    # "scanner.l", line 257: warning: statement not reached
-    # (186 warnings for scanner.l)
-    #
-    # "./filtertest.c", line 259: warning: statement not reached
-    # "./filtertest.c", line 276: warning: statement not reached
-    # "./filtertest.c", line 281: warning: statement not reached
-    LIBPCAP_TAINTED=yes
+*)
     ;;
 esac
 [ "$LIBPCAP_TAINTED" != yes ] && CFLAGS=`cc_werr_cflags`
+
+case `cc_id`/`os_id` in
+clang-*/SunOS-5.11)
+    # Work around https://www.illumos.org/issues/16369
+    [ `uname -o` = illumos ] && grep -Fq OpenIndiana /etc/release && CFLAGS="-Wno-fuse-ld-path${CFLAGS:+ $CFLAGS}"
+    ;;
+esac
 
 # If necessary, set LIBPCAP_CMAKE_TAINTED here to exempt particular cmake from
 # warnings. Use as specific terms as possible (e.g. some specific version and

@@ -99,12 +99,22 @@
  * but not in the final version).  On the latter systems, we explicitly
  * check the AF_ type to determine the length; we assume that on
  * all those systems we have "struct sockaddr_storage".
+ *
+ * OSes that use this file are:
+ * - FreeBSD (HAVE_STRUCT_SOCKADDR_SA_LEN is defined)
+ * - Haiku (HAVE_STRUCT_SOCKADDR_SA_LEN is defined)
+ * - Hurd (HAVE_STRUCT_SOCKADDR_SA_LEN is defined)
+ * - illumos (HAVE_STRUCT_SOCKADDR_SA_LEN is not defined)
+ * - Linux (HAVE_STRUCT_SOCKADDR_SA_LEN is not defined)
+ * - macOS (HAVE_STRUCT_SOCKADDR_SA_LEN is defined)
+ * - NetBSD (HAVE_STRUCT_SOCKADDR_SA_LEN is defined)
+ * - OpenBSD (SA_LEN() is defined)
+ * - Solaris 11 (HAVE_STRUCT_SOCKADDR_SA_LEN is not defined)
  */
 #ifndef SA_LEN
 #ifdef HAVE_STRUCT_SOCKADDR_SA_LEN
 #define SA_LEN(addr)	((addr)->sa_len)
 #else /* HAVE_STRUCT_SOCKADDR_SA_LEN */
-#ifdef HAVE_STRUCT_SOCKADDR_STORAGE
 static size_t
 get_sa_len(struct sockaddr *addr)
 {
@@ -125,14 +135,16 @@ get_sa_len(struct sockaddr *addr)
 		return (sizeof (struct sockaddr_ll));
 #endif
 
+#ifdef AF_LINK
+	case AF_LINK:
+		return (sizeof (struct sockaddr_dl));
+#endif
+
 	default:
 		return (sizeof (struct sockaddr));
 	}
 }
 #define SA_LEN(addr)	(get_sa_len(addr))
-#else /* HAVE_STRUCT_SOCKADDR_STORAGE */
-#define SA_LEN(addr)	(sizeof (struct sockaddr))
-#endif /* HAVE_STRUCT_SOCKADDR_STORAGE */
 #endif /* HAVE_STRUCT_SOCKADDR_SA_LEN */
 #endif /* SA_LEN */
 

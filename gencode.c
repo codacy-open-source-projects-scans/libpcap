@@ -5314,7 +5314,6 @@ gen_gateway(compiler_state_t *cstate, const u_char *eaddr,
 			 */
 			bpf_error(cstate,
 			    "'gateway' supported only on ethernet/FDDI/token ring/802.11/ATM LANE/Fibre Channel");
-			break;
 		case DLT_IP_OVER_FC:
 			b0 = gen_ipfchostop(cstate, eaddr, Q_OR);
 			break;
@@ -6868,11 +6867,17 @@ stringtoport(compiler_state_t *cstate, const char *string, size_t string_size,
 		free(cpy);
 		longjmp(cstate->top_ctx, 1);
 		/*NOTREACHED*/
+#ifdef _AIX
+		PCAP_UNREACHABLE
+#endif /* _AIX */
 
 	case STOULEN_ERROR:
 		/* Error already set. */
 		longjmp(cstate->top_ctx, 1);
 		/*NOTREACHED*/
+#ifdef _AIX
+		PCAP_UNREACHABLE
+#endif /* _AIX */
 
 	default:
 		/* Should not happen */
