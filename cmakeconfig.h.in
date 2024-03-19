@@ -153,9 +153,6 @@
 /* Define to 1 if you have the <stdlib.h> header file. */
 #cmakedefine HAVE_STDLIB_H 1
 
-/* Define to 1 if you have the `strerror' function. */
-#cmakedefine HAVE_STRERROR 1
-
 /* Define to 1 if you have the <strings.h> header file. */
 #cmakedefine HAVE_STRINGS_H 1
 
@@ -307,8 +304,11 @@
 /* target host supports RDMA sniffing */
 #cmakedefine PCAP_SUPPORT_RDMASNIFF 1
 
-/* Define to 1 if you have the ANSI C header files. */
-#cmakedefine STDC_HEADERS 1
+/* The size of `time_t', as computed by sizeof. */
+#cmakedefine SIZEOF_TIME_T @SIZEOF_TIME_T@
+
+/* The size of `void *', as computed by sizeof. */
+#cmakedefine SIZEOF_VOID_P @SIZEOF_VOID_P@
 
 /* Define to 1 if strings.h declares `ffs' */
 #cmakedefine STRINGS_H_DECLARES_FFS 1
@@ -332,6 +332,3 @@
 
 /* Define for large files, on AIX-style hosts. */
 #cmakedefine _LARGE_FILES 1
-
-/* define on AIX to get certain functions */
-#cmakedefine _SUN 1

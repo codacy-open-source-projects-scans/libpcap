@@ -118,6 +118,11 @@ fi
 AC_CHECK_SIZEOF([void *])
 ac_lbl_c_sizeof_void_p="$ac_cv_sizeof_void_p"
 
+#
+# Get the size of a time_t, to know whether it's 32-bit or 64-bit.
+#
+AC_CHECK_SIZEOF([time_t],,[#include <time.h>])
+
 AC_LBL_C_INIT(V_CCOPT, V_INCLS)
 AC_LBL_SHLIBS_INIT
 AC_C_INLINE
@@ -156,7 +161,6 @@ haiku*)
 	;;
 esac
 
-AC_CHECK_FUNCS(strerror)
 AC_CHECK_FUNC(strerror_r,
     [
 	#
@@ -2036,9 +2040,6 @@ MAN_ADMIN_COMMANDS=8
 case "$host_os" in
 
 aix*)
-	dnl Workaround to enable certain features
-	AC_DEFINE(_SUN,1,[define on AIX to get certain functions])
-
 	#
 	# AIX makes it fun to build shared and static libraries,
 	# because they're *both* ".a" archive libraries.  We

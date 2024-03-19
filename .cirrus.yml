@@ -7,7 +7,7 @@ freebsd_task:
   only_if: $CIRRUS_BRANCH != 'coverity_scan'
   freebsd_instance:
     matrix:
-      - image_family: freebsd-13-2
+      - image_family: freebsd-13-3
         cpu: 2
         memory: 2G
       - image_family: freebsd-14-0
@@ -39,11 +39,13 @@ linux_task:
     - apt-get -qy install libdbus-1-dev libbluetooth-dev libnl-genl-3-dev libibverbs-dev libssl-dev >/dev/null
     - apt-get -qy install flex bison autoconf make clang-15 gcc >/dev/null
     - apt-get -qy install cmake git >/dev/null # for build_matrix.sh and build.sh
+    - apt-get -qy install shellcheck >/dev/null
     - apt list --installed 'lib*-dev'
     - ./autogen.sh
     - ./configure --quiet # build the Makefile
     - make releasecheck
     - make whitespacecheck
+    - make shellcheck
     - ./build_matrix.sh
 
 macos_task:

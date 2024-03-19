@@ -106,6 +106,12 @@ set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules)
 project(pcap C)
 
 #
+# Export the size of void * as SIZEOF_VOID_P so that it can be
+# tested with #if.
+#
+set(SIZEOF_VOID_P "${CMAKE_SIZEOF_VOID_P}")
+
+#
 # Setting CMAKE_MACOSX_RPATH to FALSE causes the installed
 # libpcap.A.dylib to have just libpcap.A.dylib as the install
 # name;  Apple built libpcap with an install_name of /usr/lib/libpcap.A.dylib
@@ -704,7 +710,6 @@ main(void)
 #
 # Now check for various system functions.
 #
-check_function_exists(strerror HAVE_STRERROR)
 check_function_exists(strerror_r HAVE_STRERROR_R)
 if(HAVE_STRERROR_R)
     #
@@ -1246,6 +1251,14 @@ if(NOT WIN32)
   endif()
 endif()
 
+#
+# Find the size of time_t.
+#
+cmake_push_check_state()
+set(CMAKE_EXTRA_INCLUDE_FILES time.h)
+check_type_size("time_t" SIZEOF_TIME_T)
+cmake_pop_check_state()
+
 if(INET6)
     message(STATUS "Support IPv6")
 endif(INET6)
@@ -1757,7 +1770,6 @@ set(PROJECT_SOURCE_LIST_C
     nametoaddr.c
     optimize.c
     pcap-common.c
-    pcap-usb-linux-common.c
     pcap-util.c
     pcap.c
     savefile.c
@@ -3011,8 +3023,6 @@ set(MAN_FILE_FORMATS 5)
 set(MAN_MISC_INFO 7)
 set(MAN_ADMIN_COMMANDS 8)
 if(CMAKE_SYSTEM_NAME STREQUAL "AIX")
-    # Workaround to enable certain features
-    set(_SUN TRUE)
     if(PCAP_TYPE STREQUAL "bpf")
         #
         # If we're using BPF, we need libodm and libcfg, as

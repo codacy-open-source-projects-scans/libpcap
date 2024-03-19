@@ -6,6 +6,7 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       Remove an always-false pointer test from snf_read().
       Clean up DECnet address handling.
       struct pcap: Update buffer type from "void *" to "u_char *".
+      Make pcap_strerror() more thread-safe.
     Link-layer types:
       Add LINKTYPE_ETW/DLT_ETW.
       Add LINKTYPE_NETANALYZER_NG/DLT_NETANALYZER_NG (pull request
@@ -32,11 +33,11 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
     Documentation:
       Document a standard format for writing out BPF filter programs.
       Explain "other addresses" in pcap_findalldevs(3PCAP).
+      Add a README.hurd.md file.
+      Document pcap_lookupnet(3PCAP) a bit better.
     Building and testing:
       Apply GNU Hurd support patch from the Debian package.
       CI: Introduce and use LIBPCAP_CMAKE_TAINTED.
-      autoconf: Add autogen.sh, remove configure and config.h.in and put
-        these generated files in the release tarball.
       Autoconf: Update install-sh script to the latest available version.
       Remove all remaining support for AOS (4.3BSD Unix), BSD/OS, DOS,
         HP-UX before 10.20, IRIX, {OSF/1, Digital Unix, Tru64 Unix}, SINIX,
@@ -52,8 +53,6 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       Fix a few device activation bugs.
       Count and timestamp packets better.
       Add kernel filtering, fix userland filtering.
-    Solaris:
-      Fix AF_LINK handling on illumos.
 
 DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
   Summary for 1.10.5 libpcap release (so far!)
@@ -74,6 +73,7 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       Use %zu format for one case of printing a size_t.
       Fix some Coverity errors.
       Fix availabilities of some functions to match reality.
+      pcap: make the seconds and microseconds/nanoseconds fields unsigned.
     Thread safety:
       Make some static variables thread-local; fixes issue #1174.
     Packet filtering:
@@ -94,12 +94,15 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       Properly report warnings about unknown ARPHRD_ types.
       Fix DLT_CAN_SOCKETCAN handling of CAN FD
       Add CAN XL support to DLT_CAN_SOCKETCAN
+      Clean up the code that sets the "real" ("original") length for
+        isochronous USB transfers.
     Solaris:
       Handle BPF returning ESRCH for unknown devices.
       List the "any" device if it's supported.
       Report {non-existent zone}/{interface} errors appropriately.
       Allow attaching to links owned by a non-global zone.  (Based on
         pull request #1202.)
+      Fix AF_LINK handling on illumos.
     macOS:
       Redid the availability macros to be closer to what Apple's doing
         in recent SDKs, including tagging pcap-namedb.h routines.
@@ -136,6 +139,8 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       Handle DLT_/LINKTYPE_ mapping better, to handle some
         OpenBSD-specific link types better.
       Treat if_tsoffset as signed in pcapng files, as the spec says.
+      Don't try to fix the "real" length for isochronous USB
+        transfers if the number of USB descriptors is too large.
     Building and testing:
       Add a configure option to help debugging (--enable-instrument-functions)
       Improved tests and error reporting for uses of pkg-config, and
@@ -169,6 +174,8 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
         CMake.
       Use noreturn and __format__ with XL C 7.0 and later.
       Check for the same -W flags in autotools and CMake.
+      autoconf: Add autogen.sh, remove configure and config.h.in and put
+        these generated files in the release tarball.
     Documentation:
       Update and fix pcap-filter man page.
       Add a README.haiku.md file.
