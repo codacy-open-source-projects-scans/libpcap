@@ -576,8 +576,6 @@ set(PACKAGE_STRING "${LIBRARY_NAME} ${PACKAGE_VERSION}")
 # Project settings
 ######################################
 
-add_definitions(-DHAVE_CONFIG_H)
-
 include_directories(
     ${CMAKE_CURRENT_BINARY_DIR}
     ${pcap_SOURCE_DIR}
@@ -655,13 +653,10 @@ include(CheckTypeSize)
 #
 # Header files.
 #
-check_include_file(inttypes.h HAVE_INTTYPES_H)
-check_include_file(stdint.h HAVE_STDINT_H)
 check_include_file(unistd.h HAVE_UNISTD_H)
 if(NOT HAVE_UNISTD_H)
     add_definitions(-DYY_NO_UNISTD_H)
 endif(NOT HAVE_UNISTD_H)
-check_include_file(bitypes.h HAVE_SYS_BITYPES_H)
 if(NOT WIN32)
     check_include_file(sys/ioccom.h HAVE_SYS_IOCCOM_H)
     check_include_file(sys/sockio.h HAVE_SYS_SOCKIO_H)
