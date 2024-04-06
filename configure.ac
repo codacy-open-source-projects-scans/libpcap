@@ -208,12 +208,63 @@ main(void)
 AC_CHECK_FUNCS(vsyslog)
 
 #
-# Make sure we have vsnprintf() and snprintf(); we require them.
+# Require a proof of suitable snprintf(3), same as in tcpdump.
 #
-AC_CHECK_FUNC(vsnprintf,,
-    AC_MSG_ERROR([vsnprintf() is required but wasn't found]))
-AC_CHECK_FUNC(snprintf,,
-    AC_MSG_ERROR([snprintf() is required but wasn't found]))
+AC_MSG_CHECKING([whether snprintf is suitable])
+AC_RUN_IFELSE(
+    [
+        AC_LANG_SOURCE([[
+#include <stdio.h>
+#include <string.h>
+#include <inttypes.h>
+#include <sys/types.h>
+
+int main()
+{
+  char buf[100];
+  uint64_t t = (uint64_t)1 << 32;
+
+  snprintf(buf, sizeof(buf), "%zu", sizeof(buf));
+  if (strncmp(buf, "100", sizeof(buf)))
+    return 1;
+
+  snprintf(buf, sizeof(buf), "%zd", -sizeof(buf));
+  if (strncmp(buf, "-100", sizeof(buf)))
+    return 2;
+
+  snprintf(buf, sizeof(buf), "%" PRId64, -t);
+  if (strncmp(buf, "-4294967296", sizeof(buf)))
+    return 3;
+
+  snprintf(buf, sizeof(buf), "0o%" PRIo64, t);
+  if (strncmp(buf, "0o40000000000", sizeof(buf)))
+    return 4;
+
+  snprintf(buf, sizeof(buf), "0x%" PRIx64, t);
+  if (strncmp(buf, "0x100000000", sizeof(buf)))
+    return 5;
+
+  snprintf(buf, sizeof(buf), "%" PRIu64, t);
+  if (strncmp(buf, "4294967296", sizeof(buf)))
+    return 6;
+
+  return 0;
+}
+        ]])
+    ],
+    [
+        AC_MSG_RESULT(yes)
+    ],
+    [
+        AC_MSG_RESULT(no)
+        AC_MSG_ERROR(
+[The snprintf(3) implementation in this libc is not suitable,
+libpcap would not work correctly even if it managed to compile.])
+    ],
+    [
+        AC_MSG_RESULT(not while cross-compiling)
+    ]
+)
 
 needasprintf=no
 AC_CHECK_FUNCS(vasprintf asprintf,,
@@ -241,27 +292,6 @@ AC_CHECK_FUNCS(strtok_r,,
 	[needstrtok_r=yes])
 if test $needstrtok_r = yes; then
 	AC_LIBOBJ([strtok_r])
-fi
-
-#
-# Do we have ffs(), and is it declared in <strings.h>?
-#
-AC_CHECK_FUNCS(ffs)
-if test "$ac_cv_func_ffs" = yes; then
-	#
-	# We have ffs(); is it declared in <strings.h>?
-	#
-	# This test fails if we don't have <strings.h> or if we do
-	# but it doesn't declare ffs().
-	#
-	AC_CHECK_DECL(ffs,
-	    [
-		AC_DEFINE(STRINGS_H_DECLARES_FFS, 1,
-		    [Define to 1 if strings.h declares `ffs'])
-	    ],,
-	    [
-#include <strings.h>
-	    ])
 fi
 
 #
@@ -953,11 +983,6 @@ haiku)
 	# Capture module
 	#
 	PLATFORM_C_SRC="pcap-haiku.c"
-
-	#
-	# Just for the sake of it.
-	#
-	AC_CHECK_HEADERS(net/if.h net/if_dl.h net/if_types.h)
 	;;
 
 linux)
@@ -1099,7 +1124,7 @@ bpf)
 	if test -e /usr/include/inet/ipnet.h &&
 	    grep -q IPNET_ANY_LINK /usr/include/inet/ipnet.h; then
 		AC_MSG_RESULT(yes)
-		AC_DEFINE(HAVE_SOLARIS_ANY_DEVICE, , [target host supports Solaris "any" device])
+		AC_DEFINE(HAVE_SOLARIS_ANY_DEVICE, 1, [target host supports Solaris "any" device])
 	else
 		AC_MSG_RESULT(no)
 	fi
@@ -2797,11 +2822,11 @@ if test "x$enable_bluetooth" != "xno" ; then
 					    #include <bluetooth/hci.h>
 					]],
 					[[
-					    u_int i = HCI_CHANNEL_MONITOR;
+					    int i = HCI_CHANNEL_MONITOR;
 					]])],
 					[
 					    AC_MSG_RESULT(yes)
-					    AC_DEFINE(PCAP_SUPPORT_BT_MONITOR,,
+					    AC_DEFINE(PCAP_SUPPORT_BT_MONITOR, 1,
 					      [target host supports Bluetooth Monitor])
 					    MODULE_C_SRC="$MODULE_C_SRC pcap-bt-monitor-linux.c"
 					],
@@ -2994,7 +3019,7 @@ if test "x$enable_rdma" != "xno"; then
 
 	if test "x$found_usable_libibverbs" = "xyes"
 	then
-		AC_DEFINE(PCAP_SUPPORT_RDMASNIFF, , [target host supports RDMA sniffing])
+		AC_DEFINE(PCAP_SUPPORT_RDMASNIFF, 1, [target host supports RDMA sniffing])
 		MODULE_C_SRC="$MODULE_C_SRC pcap-rdmasniff.c"
 		CFLAGS="$LIBIBVERBS_CFLAGS $CFLAGS"
 		ADDITIONAL_LIBS="$LIBIBVERBS_LIBS $ADDITIONAL_LIBS"

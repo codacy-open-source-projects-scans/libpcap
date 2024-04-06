@@ -736,18 +736,55 @@ else(HAVE_STRERROR_R)
 endif(HAVE_STRERROR_R)
 
 #
-# Make sure we have vsnprintf() and snprintf(); we require them.
-# We use check_symbol_exists(), as they aren't necessarily external
-# functions - in Visual Studio, for example, they're inline functions
-# calling a common external function.
+# Require a proof of suitable snprintf(3), same as in Autoconf.
 #
-check_symbol_exists(vsnprintf "stdio.h" HAVE_VSNPRINTF)
-if(NOT HAVE_VSNPRINTF)
-    message(FATAL_ERROR "vsnprintf() is required but wasn't found")
-endif(NOT HAVE_VSNPRINTF)
-check_symbol_exists(snprintf "stdio.h" HAVE_SNPRINTF)
-if(NOT HAVE_SNPRINTF)
-    message(FATAL_ERROR "snprintf() is required but wasn't found")
+include(CheckCSourceRuns)
+check_c_source_runs("
+#include <stdio.h>
+#include <string.h>
+#include <inttypes.h>
+#include <sys/types.h>
+
+int main()
+{
+  char buf[100];
+  uint64_t t = (uint64_t)1 << 32;
+
+  snprintf(buf, sizeof(buf), \"%zu\", sizeof(buf));
+  if (strncmp(buf, \"100\", sizeof(buf)))
+    return 1;
+
+  snprintf(buf, sizeof(buf), \"%zd\", -sizeof(buf));
+  if (strncmp(buf, \"-100\", sizeof(buf)))
+    return 2;
+
+  snprintf(buf, sizeof(buf), \"%\" PRId64, -t);
+  if (strncmp(buf, \"-4294967296\", sizeof(buf)))
+    return 3;
+
+  snprintf(buf, sizeof(buf), \"0o%\" PRIo64, t);
+  if (strncmp(buf, \"0o40000000000\", sizeof(buf)))
+    return 4;
+
+  snprintf(buf, sizeof(buf), \"0x%\" PRIx64, t);
+  if (strncmp(buf, \"0x100000000\", sizeof(buf)))
+    return 5;
+
+  snprintf(buf, sizeof(buf), \"%\" PRIu64, t);
+  if (strncmp(buf, \"4294967296\", sizeof(buf)))
+    return 6;
+
+  return 0;
+}
+
+"
+    SUITABLE_SNPRINTF
+)
+if(NOT SUITABLE_SNPRINTF)
+    message(FATAL_ERROR
+"The snprintf(3) implementation in this libc is not suitable,
+libpcap would not work correctly even if it managed to compile."
+    )
 endif()
 
 check_function_exists(strlcpy HAVE_STRLCPY)
@@ -1076,20 +1113,6 @@ if(WIN32)
 else(WIN32)
     check_struct_has_member("struct sockaddr" sa_len sys/socket.h HAVE_STRUCT_SOCKADDR_SA_LEN)
 endif(WIN32)
-
-#
-# Do we have ffs(), and is it declared in <strings.h>?
-#
-check_function_exists(ffs HAVE_FFS)
-if(HAVE_FFS)
-    #
-    # OK, we have ffs().  Is it declared in <strings.h>?
-    #
-    # This test fails if we don't have <strings.h> or if we do
-    # but it doesn't declare ffs().
-    #
-    check_symbol_exists(ffs strings.h STRINGS_H_DECLARES_FFS)
-endif()
 
 #
 # This requires the libraries that we require, as ether_hostton might be
@@ -2105,10 +2128,6 @@ else(WIN32)
             message(STATUS "Checking whether the Solaris \"any\" device is supported - not supported")
         endif()
     elseif(PCAP_TYPE STREQUAL "haiku")
-        #
-        # Check for some headers just in case.
-        #
-        check_include_files("net/if.h;net/if_dl.h;net/if_types.h" HAVE_NET_IF_TYPES_H)
         set(PCAP_SRC pcap-${PCAP_TYPE}.c)
     elseif(PCAP_TYPE STREQUAL "hurd")
         #
@@ -2399,7 +2418,7 @@ if(NOT DISABLE_BLUETOOTH)
 int
 main(void)
 {
-    u_int i = HCI_CHANNEL_MONITOR;
+    int i = HCI_CHANNEL_MONITOR;
     return 0;
 }
 "
