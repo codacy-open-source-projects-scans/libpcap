@@ -252,11 +252,9 @@ EXTRA_DIST = \
 	doc/README.linux \
 	doc/README.macos \
 	doc/README.septel \
-	doc/README.sita \
 	doc/README.solaris.md \
 	doc/README.windows.md \
 	CONTRIBUTING.md \
-	TODO \
 	VERSION \
 	aclocal.m4 \
 	autogen.sh \
@@ -328,9 +326,6 @@ EXTRA_DIST = \
 	pcap-rpcap.c \
 	pcap-septel.c \
 	pcap-septel.h \
-	pcap-sita.h \
-	pcap-sita.c \
-	pcap-sita.html \
 	pcap-snf.c \
 	pcap-snf.h \
 	pcap-tc.c \
