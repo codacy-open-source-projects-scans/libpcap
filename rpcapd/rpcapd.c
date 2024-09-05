@@ -128,12 +128,15 @@ static void printusage(FILE * f)
 	"[-i] "
 #endif
         "[-D] [-s <config_file>]\n"
+#ifdef HAVE_OPENSSL
+	"              [-S] [-C] [-K <ssl_keyfile>] [-X <ssl_certfile>]\n"
+#endif
         "              [-f <config_file>]\n\n"
 	"  -b <address>    the address to bind to (either numeric or literal).\n"
 	"                  Default: binds to all local IPv4 and IPv6 addresses\n\n"
 	"  -p <port>       the port to bind to.\n"
 	"                  Default: binds to port " RPCAP_DEFAULT_NETPORT "\n\n"
-	"  -t <data port>: the port to use to transfer data.\n"
+	"  -t <data_port>: the port to use to transfer data.\n"
 	"                  Default: an unused port is chosen by the operating system\n\n"
 	"  -4              use only IPv4.\n"
 	"                  Default: use both IPv4 and IPv6 waiting sockets\n\n"
@@ -157,8 +160,8 @@ static void printusage(FILE * f)
 #ifdef HAVE_OPENSSL
 	"  -S              encrypt all communication with SSL (implements rpcaps://)\n"
 	"  -C              enable compression\n"
-	"  -K <pem_file>   uses the SSL private key in this file (default: key.pem)\n"
-	"  -X <pem_file>   uses the certificate from this file (default: cert.pem)\n"
+	"  -K <ssl_keyfile> use the SSL private key in this file (default: key.pem)\n"
+	"  -X <ssl_certfile> use the certificate from this file (default: cert.pem)\n"
 #endif
 	"  -s <config_file> save the current configuration to file\n\n"
 	"  -f <config_file> load the current configuration from file; all switches\n"
