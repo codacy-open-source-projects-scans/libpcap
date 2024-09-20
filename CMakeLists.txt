@@ -636,6 +636,28 @@ else (USE_STATIC_RT)
     message(STATUS "Use DYNAMIC runtime")
 endif(USE_STATIC_RT)
 
+#
+# CMake's definition of "cross-compiling" appears to be "compiling
+# for an *operating system* other than the one on which the build
+# is being done*.
+#
+# This is an inadequate definition, as people build for the same
+# operating system but a different instruciton set, e.g. building
+# on an IA-32 or x86-64 Linux box for an Arm embedded Linux box,
+# or building Arm code on an IA-32 or x86-64 Windows box.
+#
+# At least for the Windows case, people may do those builds by
+# setting the target with th -A flag to CMake; that causes
+# CMAKE_GENERATOR_PLATFORM to be set to the target.  If
+# CMAKE_GENERATOR_PLATFORM is set, compare it with
+# CMAKE_HOST_SYSTEM_PROCESSOR and, if they're not equal, set
+# CMAKE_CROSSCOMPILING to TRUE.
+#
+if (CMAKE_GENERATOR_PLATFORM AND
+    NOT CMAKE_GENERATOR_PLATFORM STREQUAL CMAKE_HOST_SYSTEM_PROCESSOR)
+    set(CMAKE_CROSSCOMPILING TRUE)
+endif()
+
 ###################################################################
 #   Detect available platform features
 ###################################################################
@@ -735,56 +757,60 @@ else(HAVE_STRERROR_R)
     check_function_exists(_wcserror_s HAVE__WCSERROR_S)
 endif(HAVE_STRERROR_R)
 
-#
-# Require a proof of suitable snprintf(3), same as in Autoconf.
-#
-include(CheckCSourceRuns)
-check_c_source_runs("
-#include <stdio.h>
-#include <string.h>
-#include <inttypes.h>
-#include <sys/types.h>
+if (NOT CMAKE_CROSSCOMPILING)
+    #
+    # Require a proof of suitable snprintf(3), same as in Autoconf.
+    #
+    include(CheckCSourceRuns)
+    check_c_source_runs("
+    #include <stdio.h>
+    #include <string.h>
+    #include <inttypes.h>
+    #include <sys/types.h>
 
-int main()
-{
-  char buf[100];
-  uint64_t t = (uint64_t)1 << 32;
+    int main()
+    {
+      char buf[100];
+      uint64_t t = (uint64_t)1 << 32;
 
-  snprintf(buf, sizeof(buf), \"%zu\", sizeof(buf));
-  if (strncmp(buf, \"100\", sizeof(buf)))
-    return 1;
+      snprintf(buf, sizeof(buf), \"%zu\", sizeof(buf));
+      if (strncmp(buf, \"100\", sizeof(buf)))
+        return 1;
 
-  snprintf(buf, sizeof(buf), \"%zd\", -sizeof(buf));
-  if (strncmp(buf, \"-100\", sizeof(buf)))
-    return 2;
+      snprintf(buf, sizeof(buf), \"%zd\", -sizeof(buf));
+      if (strncmp(buf, \"-100\", sizeof(buf)))
+        return 2;
 
-  snprintf(buf, sizeof(buf), \"%\" PRId64, -t);
-  if (strncmp(buf, \"-4294967296\", sizeof(buf)))
-    return 3;
+      snprintf(buf, sizeof(buf), \"%\" PRId64, -t);
+      if (strncmp(buf, \"-4294967296\", sizeof(buf)))
+        return 3;
 
-  snprintf(buf, sizeof(buf), \"0o%\" PRIo64, t);
-  if (strncmp(buf, \"0o40000000000\", sizeof(buf)))
-    return 4;
+      snprintf(buf, sizeof(buf), \"0o%\" PRIo64, t);
+      if (strncmp(buf, \"0o40000000000\", sizeof(buf)))
+        return 4;
 
-  snprintf(buf, sizeof(buf), \"0x%\" PRIx64, t);
-  if (strncmp(buf, \"0x100000000\", sizeof(buf)))
-    return 5;
+      snprintf(buf, sizeof(buf), \"0x%\" PRIx64, t);
+      if (strncmp(buf, \"0x100000000\", sizeof(buf)))
+        return 5;
 
-  snprintf(buf, sizeof(buf), \"%\" PRIu64, t);
-  if (strncmp(buf, \"4294967296\", sizeof(buf)))
-    return 6;
+      snprintf(buf, sizeof(buf), \"%\" PRIu64, t);
+      if (strncmp(buf, \"4294967296\", sizeof(buf)))
+        return 6;
 
-  return 0;
-}
+      return 0;
+    }
 
-"
-    SUITABLE_SNPRINTF
-)
-if(NOT SUITABLE_SNPRINTF)
-    message(FATAL_ERROR
-"The snprintf(3) implementation in this libc is not suitable,
-libpcap would not work correctly even if it managed to compile."
+    "
+        SUITABLE_SNPRINTF
     )
+    if(NOT SUITABLE_SNPRINTF)
+        message(FATAL_ERROR
+    "The snprintf(3) implementation in this libc is not suitable,
+    libpcap would not work correctly even if it managed to compile."
+        )
+    endif()
+else()
+    message(STATUS "Skipped SUITABLE_SNPRINTF because cross-compiling.")
 endif()
 
 check_function_exists(strlcpy HAVE_STRLCPY)
