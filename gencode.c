@@ -727,7 +727,8 @@ pcap_compile(pcap_t *p, struct bpf_program *program,
 	     const char *buf, int optimize, bpf_u_int32 mask)
 {
 #ifdef _WIN32
-	static int done = 0;
+	int err;
+	WSADATA wsaData;
 #endif
 	compiler_state_t cstate;
 	const char * volatile xbuf = buf;
@@ -747,9 +748,16 @@ pcap_compile(pcap_t *p, struct bpf_program *program,
 	}
 
 #ifdef _WIN32
-	if (!done) {
-		pcap_wsockinit();
-		done = 1;
+	/*
+	 * Initialize Winsock, asking for the latest version (2.2),
+	 * as we may be calling Winsock routines to translate
+	 * host names to addresses.
+	 */
+	err = WSAStartup(MAKEWORD(2, 2), &wsaData);
+	if (err != 0) {
+		pcapint_fmt_errmsg_for_win32_err(p->errbuf, PCAP_ERRBUF_SIZE,
+		    err, "Error calling WSAStartup()");
+		return (PCAP_ERROR);
 	}
 #endif
 
@@ -874,6 +882,10 @@ quit:
 	 * Clean up our own allocated memory.
 	 */
 	freechunks(&cstate);
+
+#ifdef _WIN32
+	WSACleanup();
+#endif
 
 	return (rc);
 }

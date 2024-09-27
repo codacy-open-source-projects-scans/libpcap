@@ -17,7 +17,7 @@
 .\" WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
 .\" MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
 .\"
-.TH PCAP 3PCAP "4 March 2024"
+.TH PCAP 3PCAP "18 September 2024"
 .SH NAME
 pcap \- Packet Capture library
 .SH SYNOPSIS
@@ -72,15 +72,7 @@ makes an attempt to check whether the string passed as an argument is a
 UTF-16LE string - note that this attempt is unsafe, as it may run past
 the end of the string - to handle
 .BR pcap_lookupdev ()
-returning a UTF-16LE string. Programs that don't call
-.BR pcap_init ()
-should, on Windows, call
-.BR pcap_wsockinit ()
-to initialize Winsock; this is not necessary if
-.BR pcap_init ()
-is called, as
-.BR pcap_init ()
-will initialize Winsock itself on Windows.
+returning a UTF-16LE string.
 .TP
 .B Routines
 .RS
@@ -312,10 +304,14 @@ setuid to root.
 .B Under Linux:
 You must be root or the application capturing packets must be installed
 setuid to root, unless your distribution has a kernel
-that supports capability bits such as CAP_NET_RAW and code to allow
+that supports capability bits such as
+.B CAP_NET_RAW
+and code to allow
 those capability bits to be given to particular accounts and to cause
 those bits to be set on a user's initial processes when they log in, in
-which case you must have CAP_NET_RAW in order to capture.
+which case you must have
+.B CAP_NET_RAW
+in order to capture.
 .TP
 .B Under BSD (this includes macOS):
 You must have read access to
@@ -850,9 +846,6 @@ call
 get capture statistics
 .RE
 .SS Opening a handle for writing captured packets
-To open a ``savefile`` to which to write packets, given the pathname the
-``savefile'' should have, call
-.BR pcap_dump_open ().
 To open a ``savefile`` to which to write packets, given the pathname the
 ``savefile'' should have, call
 .BR pcap_dump_open ();

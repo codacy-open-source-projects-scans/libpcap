@@ -157,6 +157,7 @@ extern int pcapint_vasprintf(char **, PCAP_FORMAT_STRING(const char *), va_list 
   #if !defined(__cplusplus)
     #define inline __inline
   #endif
+#include <winsock2.h>
 #endif /* _WIN32 */
 
 #ifdef __cplusplus
