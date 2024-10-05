@@ -8,6 +8,7 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       struct pcap: Update buffer type from "void *" to "u_char *".
       Remove dead code that supported SITA ACN devices.
       Remove the TODO file.
+      Merge four header files into gencode.c.
     Link-layer types:
       Add LINKTYPE_ETW/DLT_ETW.
       Add LINKTYPE_NETANALYZER_NG/DLT_NETANALYZER_NG (pull request
@@ -36,10 +37,12 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       Add a -t flag to rpcapd to specify the data channel port; from
         another incorporate-remote-capture project. (issue #1120)
       rpcapd: Refine SSL options in printusage().
+      Fix a possible buffer overflow (Coverity CID 1619148).
     Documentation:
       Document a standard format for writing out BPF filter programs.
       Add a README.hurd.md file.
       Explain "any" device better in pcap_create(3PCAP).
+      Cross-reference some man pages better.
     Building and testing:
       Apply GNU Hurd support patch from the Debian package.
       CI: Introduce and use LIBPCAP_CMAKE_TAINTED.
@@ -59,6 +62,7 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       CMake: Skip snprintf(3) tests when cross-compiling.
       autogen.sh: Allow to configure Autoconf warnings.
       autogen.sh: Delete all trailing blank lines at end of configure.
+      Autoconf: Add support for libnl-tiny with pkg-config.
     Hurd:
       Support network capture devices too.
       Fix a few device activation bugs.
@@ -67,8 +71,14 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
 
 DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
   Summary for 1.10.6 libpcap release (so far!)
+    Linux:
+      Fix check for mac80211 phydev.
+      Don't create monitor-mode interface if we're capturing on one.
+    D-Bus:
+      Fix message leak.
     Building and testing:
       Makefile.in: Include instrument-functions.c in the release tarball.
+      CMake: Fix libnl usage with pkg-config.
 
 Friday, August 30, 2024 / The Tcpdump Group
   Summary for 1.10.5 libpcap release

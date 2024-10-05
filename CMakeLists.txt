@@ -2061,12 +2061,6 @@ else(WIN32)
         cmake_pop_check_state()
     elseif(PCAP_TYPE STREQUAL "linux")
         #
-        # Do we have the wireless extensions?
-        # linux/wireless.h requires sys/socket.h.
-        #
-        check_include_files("sys/socket.h;linux/wireless.h" HAVE_LINUX_WIRELESS_H)
-
-        #
         # Do we have libnl?
         # We only want version 3.  Version 2 was, apparently,
         # short-lived, and version 1 is source and binary
@@ -2075,9 +2069,15 @@ else(WIN32)
         # not supporting older versions of the Linux kernel;
         # let's drop support for older versions of libnl, too.
         #
+        # Due to lack of testing facilities this block does not
+        # include a branch for libnl-tiny with pkg-config, which
+        # is not consistent with Autoconf.
+        #
         if(BUILD_WITH_LIBNL)
             pkg_check_modules(LIBNL libnl-genl-3.0)
             if(LIBNL_FOUND)
+                set(HAVE_LIBNL TRUE)
+                include_directories(${LIBNL_INCLUDE_DIRS})
                 set(PCAP_LINK_LIBRARIES ${LIBNL_LIBRARIES} ${PCAP_LINK_LIBRARIES})
 
                 #
