@@ -27,31 +27,6 @@
 #ifdef _WIN32
   #include <winsock2.h>
   #include <ws2tcpip.h>
-
-  #ifdef INET6
-    /*
-     * To quote the MSDN page for getaddrinfo() at
-     *
-     *    https://msdn.microsoft.com/en-us/library/windows/desktop/ms738520(v=vs.85).aspx
-     *
-     * "Support for getaddrinfo on Windows 2000 and older versions
-     * The getaddrinfo function was added to the Ws2_32.dll on Windows XP and
-     * later. To execute an application that uses this function on earlier
-     * versions of Windows, then you need to include the Ws2tcpip.h and
-     * Wspiapi.h files. When the Wspiapi.h include file is added, the
-     * getaddrinfo function is defined to the WspiapiGetAddrInfo inline
-     * function in the Wspiapi.h file. At runtime, the WspiapiGetAddrInfo
-     * function is implemented in such a way that if the Ws2_32.dll or the
-     * Wship6.dll (the file containing getaddrinfo in the IPv6 Technology
-     * Preview for Windows 2000) does not include getaddrinfo, then a
-     * version of getaddrinfo is implemented inline based on code in the
-     * Wspiapi.h header file. This inline code will be used on older Windows
-     * platforms that do not natively support the getaddrinfo function."
-     *
-     * We use getaddrinfo(), so we include Wspiapi.h here.
-     */
-    #include <wspiapi.h>
-  #endif /* INET6 */
 #else /* _WIN32 */
   #include <sys/param.h>
   #include <sys/types.h>
@@ -496,7 +471,7 @@ int
 pcap_nametoproto(const char *str)
 {
 	struct protoent *p;
-  #if defined(HAVE_LINUX_GETNETBYNAME_R)
+  #if defined(HAVE_LINUX_GETPROTOBYNAME_R)
 	/*
 	 * We have Linux's reentrant getprotobyname_r().
 	 */
@@ -512,7 +487,7 @@ pcap_nametoproto(const char *str)
 		 */
 		return 0;
 	}
-  #elif defined(HAVE_SOLARIS_GETNETBYNAME_R)
+  #elif defined(HAVE_SOLARIS_GETPROTOBYNAME_R)
 	/*
 	 * We have Solaris's reentrant getprotobyname_r().
 	 */
@@ -520,12 +495,13 @@ pcap_nametoproto(const char *str)
 	char buf[1024];	/* arbitrary size */
 
 	p = getprotobyname_r(str, &result_buf, buf, (int)sizeof buf);
-  #elif defined(HAVE_AIX_GETNETBYNAME_R)
+  #elif defined(HAVE_AIX_GETPROTOBYNAME_R)
 	/*
 	 * We have AIX's reentrant getprotobyname_r().
 	 */
 	struct protoent result_buf;
-	struct protoent_data proto_data;
+	// "The structure must be zero-filled before it is used..." (OpenBSD).
+	struct protoent_data proto_data = {0};
 
 	if (getprotobyname_r(str, &result_buf, &proto_data) == -1)
 		p = NULL;

@@ -93,13 +93,43 @@
 #include <linux/ethtool.h>
 #include <netinet/in.h>
 #include <linux/if_ether.h>
+
 #include <linux/if_arp.h>
+#ifndef ARPHRD_IEEE802154
+  // Linux before 2.6.31
+  #define ARPHRD_IEEE802154 804
+#endif
+#ifndef ARPHRD_IEEE802154_MONITOR
+  // Linux before 3.5
+  #define ARPHRD_IEEE802154_MONITOR 805
+#endif
+#ifndef ARPHRD_NETLINK
+  // Linux before 3.11
+  #define ARPHRD_NETLINK 824
+#endif
+#ifndef ARPHRD_6LOWPAN
+  // Linux before 3.14
+  #define ARPHRD_6LOWPAN 825
+#endif
+#ifndef ARPHRD_VSOCKMON
+  // Linux before 4.12
+  #define ARPHRD_VSOCKMON 826
+#endif
+#ifndef ARPHRD_LAPD
+  /*
+   * ARPHRD_LAPD is unofficial and randomly allocated, if reallocation
+   * is needed, please report it to <daniele@orlandi.com>
+   */
+  #define ARPHRD_LAPD 8445
+#endif
+
 #include <poll.h>
 #include <dirent.h>
 #include <sys/eventfd.h>
 
 #include "pcap-int.h"
 #include "pcap-util.h"
+#include "pcap-snf.h"
 #include "pcap/sll.h"
 #include "pcap/vlan.h"
 #include "pcap/can_socketcan.h"
@@ -1736,14 +1766,14 @@ get_if_ioctl_socket(void)
 }
 
 /*
- * Get additional flags for a device, using SIOCGIFMEDIA.
+ * Get additional flags for a device, using SIOCETHTOOL.
  */
 static int
 get_if_flags(const char *name, bpf_u_int32 *flags, char *errbuf)
 {
 	int sock;
 	FILE *fh;
-	unsigned int arptype;
+	unsigned int arptype = ARPHRD_VOID;
 	struct ifreq ifr;
 	struct ethtool_value info;
 
@@ -1815,15 +1845,9 @@ get_if_flags(const char *name, bpf_u_int32 *flags, char *errbuf)
 				case ARPHRD_IEEE80211:
 				case ARPHRD_IEEE80211_PRISM:
 				case ARPHRD_IEEE80211_RADIOTAP:
-#ifdef ARPHRD_IEEE802154
 				case ARPHRD_IEEE802154:
-#endif
-#ifdef ARPHRD_IEEE802154_MONITOR
 				case ARPHRD_IEEE802154_MONITOR:
-#endif
-#ifdef ARPHRD_6LOWPAN
 				case ARPHRD_6LOWPAN:
-#endif
 					/*
 					 * Various wireless types.
 					 */
@@ -1912,6 +1936,15 @@ get_if_flags(const char *name, bpf_u_int32 *flags, char *errbuf)
 #endif
 
 	close(sock);
+
+#ifdef HAVE_SNF_API
+	// For "down" SNF devices the SNF API makes the flags more relevant.
+	if (arptype == ARPHRD_ETHER &&
+	    ! (*flags & PCAP_IF_UP) &&
+	    snf_get_if_flags(name, flags, errbuf) < 0)
+		return PCAP_ERROR;
+#endif // HAVE_SNF_API
+
 	return 0;
 }
 
@@ -1928,7 +1961,7 @@ pcapint_platform_finddevs(pcap_if_list_t *devlistp, char *errbuf)
 	/*
 	 * Add the "any" device.
 	 */
-	if (pcap_add_any_dev(devlistp, errbuf) == NULL)
+	if (pcapint_add_any_dev(devlistp, errbuf) == NULL)
 		return (-1);
 
 	return (0);
@@ -2095,16 +2128,11 @@ static int map_arphrd_to_dlt(pcap_t *handle, int arptype,
 	case ARPHRD_CHAOS:
 		handle->linktype = DLT_CHAOS;
 		break;
-#ifndef ARPHRD_CAN
-#define ARPHRD_CAN 280
-#endif
+
 	case ARPHRD_CAN:
 		handle->linktype = DLT_CAN_SOCKETCAN;
 		break;
 
-#ifndef ARPHRD_IEEE802_TR
-#define ARPHRD_IEEE802_TR 800	/* From Linux 2.4 */
-#endif
 	case ARPHRD_IEEE802_TR:
 	case ARPHRD_IEEE802:
 		handle->linktype = DLT_IEEE802;
@@ -2115,17 +2143,11 @@ static int map_arphrd_to_dlt(pcap_t *handle, int arptype,
 		handle->linktype = DLT_ARCNET_LINUX;
 		break;
 
-#ifndef ARPHRD_FDDI	/* From Linux 2.2.13 */
-#define ARPHRD_FDDI	774
-#endif
 	case ARPHRD_FDDI:
 		handle->linktype = DLT_FDDI;
 		handle->offset = 3;
 		break;
 
-#ifndef ARPHRD_ATM  /* FIXME: How to #include this? */
-#define ARPHRD_ATM 19
-#endif
 	case ARPHRD_ATM:
 		/*
 		 * The Classical IP implementation in ATM for Linux
@@ -2169,23 +2191,14 @@ static int map_arphrd_to_dlt(pcap_t *handle, int arptype,
 			handle->linktype = -1;
 		break;
 
-#ifndef ARPHRD_IEEE80211  /* From Linux 2.4.6 */
-#define ARPHRD_IEEE80211 801
-#endif
 	case ARPHRD_IEEE80211:
 		handle->linktype = DLT_IEEE802_11;
 		break;
 
-#ifndef ARPHRD_IEEE80211_PRISM  /* From Linux 2.4.18 */
-#define ARPHRD_IEEE80211_PRISM 802
-#endif
 	case ARPHRD_IEEE80211_PRISM:
 		handle->linktype = DLT_PRISM_HEADER;
 		break;
 
-#ifndef ARPHRD_IEEE80211_RADIOTAP /* new */
-#define ARPHRD_IEEE80211_RADIOTAP 803
-#endif
 	case ARPHRD_IEEE80211_RADIOTAP:
 		handle->linktype = DLT_IEEE802_11_RADIO;
 		break;
@@ -2233,9 +2246,6 @@ static int map_arphrd_to_dlt(pcap_t *handle, int arptype,
 		}
 		break;
 
-#ifndef ARPHRD_CISCO
-#define ARPHRD_CISCO 513 /* previously ARPHRD_HDLC */
-#endif
 	case ARPHRD_CISCO:
 		handle->linktype = DLT_C_HDLC;
 		break;
@@ -2243,22 +2253,13 @@ static int map_arphrd_to_dlt(pcap_t *handle, int arptype,
 	/* Not sure if this is correct for all tunnels, but it
 	 * works for CIPE */
 	case ARPHRD_TUNNEL:
-#ifndef ARPHRD_SIT
-#define ARPHRD_SIT 776	/* From Linux 2.2.13 */
-#endif
 	case ARPHRD_SIT:
 	case ARPHRD_CSLIP:
 	case ARPHRD_SLIP6:
 	case ARPHRD_CSLIP6:
 	case ARPHRD_ADAPT:
 	case ARPHRD_SLIP:
-#ifndef ARPHRD_RAWHDLC
-#define ARPHRD_RAWHDLC 518
-#endif
 	case ARPHRD_RAWHDLC:
-#ifndef ARPHRD_DLCI
-#define ARPHRD_DLCI 15
-#endif
 	case ARPHRD_DLCI:
 		/*
 		 * XXX - should some of those be mapped to DLT_LINUX_SLL
@@ -2267,9 +2268,6 @@ static int map_arphrd_to_dlt(pcap_t *handle, int arptype,
 		handle->linktype = DLT_RAW;
 		break;
 
-#ifndef ARPHRD_FRAD
-#define ARPHRD_FRAD 770
-#endif
 	case ARPHRD_FRAD:
 		handle->linktype = DLT_FRELAY;
 		break;
@@ -2297,21 +2295,9 @@ static int map_arphrd_to_dlt(pcap_t *handle, int arptype,
 		handle->linktype = DLT_IP_OVER_FC;
 		break;
 
-#ifndef ARPHRD_FCPP
-#define ARPHRD_FCPP	784
-#endif
 	case ARPHRD_FCPP:
-#ifndef ARPHRD_FCAL
-#define ARPHRD_FCAL	785
-#endif
 	case ARPHRD_FCAL:
-#ifndef ARPHRD_FCPL
-#define ARPHRD_FCPL	786
-#endif
 	case ARPHRD_FCPL:
-#ifndef ARPHRD_FCFABRIC
-#define ARPHRD_FCFABRIC	787
-#endif
 	case ARPHRD_FCFABRIC:
 		/*
 		 * Back in 2002, Donald Lee at Cray wanted a DLT_ for
@@ -2372,9 +2358,6 @@ static int map_arphrd_to_dlt(pcap_t *handle, int arptype,
 		handle->dlt_count = 3;
 		break;
 
-#ifndef ARPHRD_IRDA
-#define ARPHRD_IRDA	783
-#endif
 	case ARPHRD_IRDA:
 		/* Don't expect IP packet out of this interfaces... */
 		handle->linktype = DLT_LINUX_IRDA;
@@ -2385,19 +2368,11 @@ static int map_arphrd_to_dlt(pcap_t *handle, int arptype,
 		/* handlep->cooked = 1; */
 		break;
 
-	/* ARPHRD_LAPD is unofficial and randomly allocated, if reallocation
-	 * is needed, please report it to <daniele@orlandi.com> */
-#ifndef ARPHRD_LAPD
-#define ARPHRD_LAPD	8445
-#endif
 	case ARPHRD_LAPD:
 		/* Don't expect IP packet out of this interfaces... */
 		handle->linktype = DLT_LINUX_LAPD;
 		break;
 
-#ifndef ARPHRD_NONE
-#define ARPHRD_NONE	0xFFFE
-#endif
 	case ARPHRD_NONE:
 		/*
 		 * No link-layer header; packets are just IP
@@ -2406,16 +2381,10 @@ static int map_arphrd_to_dlt(pcap_t *handle, int arptype,
 		handle->linktype = DLT_RAW;
 		break;
 
-#ifndef ARPHRD_IEEE802154
-#define ARPHRD_IEEE802154      804
-#endif
        case ARPHRD_IEEE802154:
                handle->linktype =  DLT_IEEE802_15_4_NOFCS;
                break;
 
-#ifndef ARPHRD_NETLINK
-#define ARPHRD_NETLINK	824
-#endif
 	case ARPHRD_NETLINK:
 		handle->linktype = DLT_NETLINK;
 		/*
@@ -2428,9 +2397,6 @@ static int map_arphrd_to_dlt(pcap_t *handle, int arptype,
 		/* handlep->cooked = 1; */
 		break;
 
-#ifndef ARPHRD_VSOCKMON
-#define ARPHRD_VSOCKMON	826
-#endif
 	case ARPHRD_VSOCKMON:
 		handle->linktype = DLT_VSOCK;
 		break;
@@ -5031,6 +4997,7 @@ added:
 		/*
 		 * "atexit()" failed; don't put the interface
 		 * in rfmon mode, just give up.
+		 * handle->errbuf has already been filled.
 		 */
 		del_mon_if(handle, sock_fd, &nlstate, device,
 		    handlep->mondevice);

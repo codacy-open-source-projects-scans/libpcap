@@ -209,7 +209,6 @@ typedef u_int	(*sendqueue_transmit_op_t)(pcap_t *, pcap_send_queue *, int);
 typedef int	(*setuserbuffer_op_t)(pcap_t *, int);
 typedef int	(*live_dump_op_t)(pcap_t *, char *, int, int);
 typedef int	(*live_dump_ended_op_t)(pcap_t *, int);
-typedef PAirpcapHandle	(*get_airpcap_handle_op_t)(pcap_t *);
 #endif
 typedef void	(*cleanup_op_t)(pcap_t *);
 
@@ -361,7 +360,6 @@ struct pcap {
 	setuserbuffer_op_t setuserbuffer_op;
 	live_dump_op_t live_dump_op;
 	live_dump_ended_op_t live_dump_ended_op;
-	get_airpcap_handle_op_t get_airpcap_handle_op;
 #endif
 	cleanup_op_t cleanup_op;
 };
@@ -413,6 +411,14 @@ int	pcapint_setnonblock_fd(pcap_t *p, int);
  * by pcap_create routines.
  */
 pcap_t	*pcapint_create_interface(const char *, char *);
+/*
+ * A format string for something-only libpcap builds, which use a stub
+ * implementation of pcapint_create_interface().  It contains the substring
+ * "No such device" (one of the standard descriptions of ENODEV) -- this way
+ * tcpdump can detect a particular error condition even though pcap_create()
+ * returns NULL for all errors.
+ */
+#define PCAP_ENODEV_MESSAGE "No such device (this build of libpcap supports %s devices only)."
 
 /*
  * This wrapper takes an error buffer pointer and a type to use for the
@@ -449,7 +455,7 @@ void	pcapint_breakloop_common(pcap_t *);
  *
  * "pcapint_add_dev()" adds an entry to a pcap_if_list_t.
  *
- * "pcap_add_any_dev()" adds an entry for the "any" device to a pcap_if_list_t.
+ * "pcapint_add_any_dev()" adds an entry for the "any" device to a pcap_if_list_t.
  *
  * "pcapint_find_dev()" tries to find a device, by name, in a pcap_if_list_t.
  *
@@ -469,7 +475,7 @@ pcap_if_t *pcapint_find_or_add_dev(pcap_if_list_t *, const char *, bpf_u_int32,
 pcap_if_t *pcapint_find_dev(pcap_if_list_t *, const char *);
 pcap_if_t *pcapint_add_dev(pcap_if_list_t *, const char *, bpf_u_int32,
 	    const char *, char *);
-pcap_if_t *pcap_add_any_dev(pcap_if_list_t *, char *);
+pcap_if_t *pcapint_add_any_dev(pcap_if_list_t *, char *);
 int	pcapint_add_addr_to_dev(pcap_if_t *, struct sockaddr *, size_t,
 	    struct sockaddr *, size_t, struct sockaddr *, size_t,
 	    struct sockaddr *dstaddr, size_t, char *errbuf);
@@ -530,10 +536,9 @@ FILE	*pcapint_charset_fopen(const char *path, const char *mode);
  */
 #ifdef _WIN32
 #define pcap_code_handle_t	HMODULE
-#define pcap_funcptr_t		FARPROC
 
 pcap_code_handle_t	pcapint_load_code(const char *);
-pcap_funcptr_t		pcapint_find_function(pcap_code_handle_t, const char *);
+void			*pcapint_find_function(pcap_code_handle_t, const char *);
 #endif
 
 /*

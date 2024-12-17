@@ -241,13 +241,13 @@ EXTRA_DIST = \
 	Makefile-devel-adds \
 	README.md \
 	doc/README.aix \
-	doc/README.dag \
+	doc/README.dag.md \
 	doc/README.haiku.md \
 	doc/README.hpux \
 	doc/README.hurd.md \
 	doc/README.linux \
 	doc/README.macos \
-	doc/README.septel \
+	doc/README.snf.md \
 	doc/README.solaris.md \
 	doc/README.windows.md \
 	CONTRIBUTING.md \
@@ -259,14 +259,12 @@ EXTRA_DIST = \
 	chmod_bpf \
 	cmake_uninstall.cmake.in \
 	cmakeconfig.h.in \
-	cmake/Modules/FindAirPcap.cmake \
 	cmake/Modules/FindDAG.cmake \
 	cmake/Modules/Finddpdk.cmake \
 	cmake/Modules/FindFseeko.cmake \
 	cmake/Modules/FindLFS.cmake \
 	cmake/Modules/FindPacket.cmake \
 	cmake/Modules/FindSNF.cmake \
-	cmake/Modules/FindTC.cmake \
 	cmake/have_siocglifconf.c \
 	config.guess \
 	config.sub \
@@ -290,8 +288,6 @@ EXTRA_DIST = \
 	mkdep \
 	nomkdep \
 	org.tcpdump.chmod_bpf.plist \
-	pcap-airpcap.c \
-	pcap-airpcap.h \
 	pcap-bpf.c \
 	pcap-bt-linux.c \
 	pcap-bt-linux.h \
@@ -321,12 +317,8 @@ EXTRA_DIST = \
 	pcap-rdmasniff.c \
 	pcap-rdmasniff.h \
 	pcap-rpcap.c \
-	pcap-septel.c \
-	pcap-septel.h \
 	pcap-snf.c \
 	pcap-snf.h \
-	pcap-tc.c \
-	pcap-tc.h \
 	pcap-usb-linux.c \
 	pcap-usb-linux.h \
 	rpcap-protocol.c \
@@ -770,6 +762,9 @@ distclean: clean
 	rm -rf autom4te.cache
 	(cd rpcapd; $(MAKE) distclean)
 	(cd testprogs; $(MAKE) distclean)
+
+check: testprogs
+	$(srcdir)/testprogs/TESTrun
 
 extags: $(TAGFILES)
 	ctags $(TAGFILES)

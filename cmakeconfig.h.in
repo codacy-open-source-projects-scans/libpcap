@@ -15,9 +15,6 @@
 /* define if we have the AIX getprotobyname_r() */
 #cmakedefine HAVE_AIX_GETPROTOBYNAME_R 1
 
-/* define if you have the AirPcap API */
-#cmakedefine HAVE_AIRPCAP_API 1
-
 /* Define to 1 if you have the `asprintf' function. */
 #cmakedefine HAVE_ASPRINTF 1
 
@@ -27,17 +24,11 @@
 /* define if you have the DAG API */
 #cmakedefine HAVE_DAG_API 1
 
-/* define if you have dag_get_erf_types() */
-#cmakedefine HAVE_DAG_GET_ERF_TYPES 1
-
-/* define if you have dag_get_stream_erf_types() */
-#cmakedefine HAVE_DAG_GET_STREAM_ERF_TYPES 1
-
-/* define if you have large streams capable DAG API */
-#cmakedefine HAVE_DAG_LARGE_STREAMS_API 1
-
 /* define if you have vdag_set_device_info() */
 #cmakedefine HAVE_DAG_VDAG 1
+
+/* Define to 1 if DAG transmit support is enabled */
+#cmakedefine ENABLE_DAG_TX 1
 
 /* Define to 1 if you have the declaration of `ether_hostton' */
 #cmakedefine HAVE_DECL_ETHER_HOSTTON 1
@@ -114,9 +105,6 @@
 /* Define to 1 if you have a POSIX-style `strerror_r' function. */
 #cmakedefine HAVE_POSIX_STRERROR_R 1
 
-/* define if you have the Septel API */
-#cmakedefine HAVE_SEPTEL_API 1
-
 /* define if you have the Myricom SNF API */
 #cmakedefine HAVE_SNF_API 1
 
@@ -189,9 +177,6 @@
 
 /* Define to 1 if you have the <sys/sockio.h> header file. */
 #cmakedefine HAVE_SYS_SOCKIO_H 1
-
-/* define if you have the TurboCap API */
-#cmakedefine HAVE_TC_API 1
 
 /* Define to 1 if you have the <unistd.h> header file. */
 #cmakedefine HAVE_UNISTD_H 1

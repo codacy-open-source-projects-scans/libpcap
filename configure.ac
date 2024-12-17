@@ -219,32 +219,50 @@ AC_RUN_IFELSE(
 #include <inttypes.h>
 #include <sys/types.h>
 
+#if defined(_WIN32) && !defined(_SSIZE_T_DEFINED)
+/*
+ * On UN*Xes, this is a signed integer type of the same size as size_t.
+ *
+ * It's not defined by Visual Studio; we assume that ptrdiff_t will
+ * be a type that is a signed integer type of the same size as size_t.
+ */
+typedef ptrdiff_t ssize_t;
+#endif
+
+/*
+ * Avoid trying to cast negative values to unsigned types, or doing
+ * shifts of signed types, in order not to have the test program fail
+ * if we're building with undefined-behavior sanitizers enabled.
+ */
 int main()
 {
   char buf[100];
-  uint64_t t = (uint64_t)1 << 32;
+  unsigned int ui = sizeof(buf);
+  int i = sizeof(buf);
+  int64_t i64 = INT64_C(0x100000000);
+  uint64_t ui64 = UINT64_C(0x100000000);
 
-  snprintf(buf, sizeof(buf), "%zu", sizeof(buf));
+  snprintf(buf, sizeof(buf), "%zu", (size_t)ui);
   if (strncmp(buf, "100", sizeof(buf)))
     return 1;
 
-  snprintf(buf, sizeof(buf), "%zd", -sizeof(buf));
+  snprintf(buf, sizeof(buf), "%zd", (ssize_t)(-i));
   if (strncmp(buf, "-100", sizeof(buf)))
     return 2;
 
-  snprintf(buf, sizeof(buf), "%" PRId64, -t);
+  snprintf(buf, sizeof(buf), "%" PRId64, -i64);
   if (strncmp(buf, "-4294967296", sizeof(buf)))
     return 3;
 
-  snprintf(buf, sizeof(buf), "0o%" PRIo64, t);
+  snprintf(buf, sizeof(buf), "0o%" PRIo64, ui64);
   if (strncmp(buf, "0o40000000000", sizeof(buf)))
     return 4;
 
-  snprintf(buf, sizeof(buf), "0x%" PRIx64, t);
+  snprintf(buf, sizeof(buf), "0x%" PRIx64, ui64);
   if (strncmp(buf, "0x100000000", sizeof(buf)))
     return 5;
 
-  snprintf(buf, sizeof(buf), "%" PRIu64, t);
+  snprintf(buf, sizeof(buf), "%" PRIu64, ui64);
   if (strncmp(buf, "4294967296", sizeof(buf)))
     return 6;
 
@@ -1160,16 +1178,6 @@ dpdk)
 	xxx_only=yes
 	;;
 
-septel)
-	#
-	# --with-pcap=septel is the only way to get here, and it means
-	# "Septel support but nothing else"
-	#
-	V_DEFS="$V_DEFS -DSEPTEL_ONLY"
-	PLATFORM_C_SRC="pcap-septel.c"
-	xxx_only=yes
-	;;
-
 snf)
 	#
 	# --with-pcap=snf is the only way to get here, and it means
@@ -1313,7 +1321,7 @@ AS_HELP_STRING([--with-dag@<:@=DIR@:>@],[include Endace DAG support (located in 
 		# User requested DAG-only libpcap, so we'd better have
 		# the DAG API.
 		want_dag=yes
-	elif test "xxx_only" = yes; then
+	elif test "$xxx_only" = yes; then
 		# User requested something-else-only pcap, so they don't
 		# want DAG support.
 		want_dag=no
@@ -1345,7 +1353,7 @@ if test "$want_dag" != no; then
 
 	# If necessary, set default paths for DAG API headers and libraries.
 	if test -z "$dag_root"; then
-		dag_root=/usr/local
+		dag_root=/usr
 	fi
 
 	if test -z "$dag_include_dir"; then
@@ -1381,7 +1389,7 @@ if test "$want_dag" != no; then
 		# included if there's a found-action (arg 3).
 		AC_LBL_SAVE_CHECK_STATE
 		LDFLAGS="-L$dag_lib_dir"
-		AC_CHECK_LIB([dag], [dag_attach_stream],
+		AC_CHECK_LIB([dag], [dag_attach_stream64],
 		    [
 			#
 			# We assume that if we have libdag we have
@@ -1392,12 +1400,7 @@ if test "$want_dag" != no; then
 			ADDITIONAL_LIBS_STATIC="-L$dag_lib_dir $ADDITIONAL_LIBS_STATIC -ldag -ldagconf"
 			LIBS_PRIVATE="-L$dag_lib_dir $LIBS_PRIVATE -ldag -ldagconf"
 		    ],
-		    [AC_MSG_ERROR(DAG library lacks streams support)])
-		AC_CHECK_LIB([dag], [dag_attach_stream64], [dag_large_streams="1"], [dag_large_streams="0"])
-		AC_CHECK_LIB([dag],[dag_get_erf_types], [
-			AC_DEFINE(HAVE_DAG_GET_ERF_TYPES, 1, [define if you have dag_get_erf_types()])])
-		AC_CHECK_LIB([dag],[dag_get_stream_erf_types], [
-			AC_DEFINE(HAVE_DAG_GET_STREAM_ERF_TYPES, 1, [define if you have dag_get_stream_erf_types()])])
+		    [AC_MSG_ERROR(DAG library lacks 64-bit streams support)])
 		AC_LBL_RESTORE_CHECK_STATE
 
 		#
@@ -1405,25 +1408,35 @@ if test "$want_dag" != no; then
 		# as they're installed at the same time from the same
 		# package.
 		#
-		if test "$dag_large_streams" = 1; then
-			AC_DEFINE(HAVE_DAG_LARGE_STREAMS_API, 1, [define if you have large streams capable DAG API])
-			AC_LBL_SAVE_CHECK_STATE
-			LIBS="$LIBS -ldag -ldagconf"
-			LDFLAGS="$LDFLAGS -L$dag_lib_dir"
-			AC_CHECK_LIB([vdag],[vdag_set_device_info], [ac_dag_have_vdag="1"], [ac_dag_have_vdag="0"])
-			AC_LBL_RESTORE_CHECK_STATE
-			if test "$ac_dag_have_vdag" = 1; then
-				AC_DEFINE(HAVE_DAG_VDAG, 1, [define if you have vdag_set_device_info()])
-				if test "$ac_lbl_have_pthreads" != "found"; then
-					AC_MSG_ERROR([DAG requires pthreads, but we didn't find them])
-				fi
-				ADDITIONAL_LIBS="$ADDITIONAL_LIBS $PTHREAD_LIBS"
-				ADDITIONAL_LIBS_STATIC="$ADDITIONAL_LIBS_STATIC $PTHREAD_LIBS"
-				LIBS_PRIVATE="$LIBS_PRIVATE $PTHREAD_LIBS"
+		AC_LBL_SAVE_CHECK_STATE
+		LIBS="$LIBS -ldag -ldagconf"
+		LDFLAGS="$LDFLAGS -L$dag_lib_dir"
+		AC_CHECK_LIB([vdag],[vdag_set_device_info], [ac_dag_have_vdag="1"], [ac_dag_have_vdag="0"])
+		AC_LBL_RESTORE_CHECK_STATE
+		if test "$ac_dag_have_vdag" = 1; then
+			AC_DEFINE(HAVE_DAG_VDAG, 1, [define if you have vdag_set_device_info()])
+			if test "$ac_lbl_have_pthreads" != "found"; then
+				AC_MSG_ERROR([DAG requires pthreads, but we didn't find them])
 			fi
+			ADDITIONAL_LIBS="$ADDITIONAL_LIBS $PTHREAD_LIBS"
+			ADDITIONAL_LIBS_STATIC="$ADDITIONAL_LIBS_STATIC $PTHREAD_LIBS"
+			LIBS_PRIVATE="$LIBS_PRIVATE $PTHREAD_LIBS"
 		fi
 
+		AC_MSG_NOTICE([using Endace DAG API headers from $dag_include_dir])
+		AC_MSG_NOTICE([using Endace DAG API libraries from $dag_lib_dir])
 		AC_DEFINE(HAVE_DAG_API, 1, [define if you have the DAG API])
+
+		AC_MSG_CHECKING([whether to enable Endace DAG transmit support (EXPERIMENTAL)])
+		AC_ARG_ENABLE(dag-tx,
+			AS_HELP_STRING([--enable-dag-tx],
+				[enable Endace DAG transmit support (EXPERIMENTAL) @<:@default=no@:>@]
+			)
+		)
+		if test "$enable_dag_tx" = "yes"; then
+			AC_DEFINE(ENABLE_DAG_TX, 1, [Define to 1 if DAG transmit support is enabled])
+		fi
+		AC_MSG_RESULT(${enable_dag_tx-no})
 	else
 		if test "$V_PCAP" = dag; then
 			# User requested "dag" capture type but we couldn't
@@ -1434,83 +1447,6 @@ if test "$want_dag" != no; then
 		if test "$want_dag" = yes; then
 			# User wanted DAG support but we couldn't find it.
 			AC_MSG_ERROR([DAG support requested with --with-dag, but the DAG headers weren't found at $dag_include_dir: make sure the DAG support is installed, specify a different path or paths if necessary, or don't request DAG support])
-		fi
-	fi
-	CFLAGS="$save_CFLAGS"
-fi
-
-AC_ARG_WITH(septel,
-AS_HELP_STRING([--with-septel@<:@=DIR@:>@],[include Septel support (located in directory DIR, if supplied).  @<:@default=yes, if present@:>@]),
-[
-	if test "$withval" = no
-	then
-		want_septel=no
-	elif test "$withval" = yes
-	then
-		want_septel=yes
-		septel_root=
-	else
-		want_septel=yes
-		septel_root=$withval
-	fi
-],[
-	if test "$V_PCAP" = septel; then
-		# User requested Septel-only libpcap, so we'd better have
-		# the Septel API.
-		want_septel=yes
-	elif test "xxx_only" = yes; then
-		# User requested something-else-only pcap, so they don't
-		# want Septel support.
-		want_septel=no
-	else
-		#
-		# Use Septel API if present, otherwise don't
-		#
-		want_septel=ifpresent
-	fi
-])
-
-ac_cv_lbl_septel_api=no
-if test "$with_septel" != no; then
-
-	AC_MSG_CHECKING([whether we have Septel API headers])
-
-	# If necessary, set default paths for Septel API headers and libraries.
-	if test -z "$septel_root"; then
-		septel_root=$srcdir/../septel
-	fi
-
-	septel_tools_dir="$septel_root"
-	septel_include_dir="$septel_root/INC"
-
-	if test -r "$septel_include_dir/msg.h"; then
-		ac_cv_lbl_septel_api=yes
-	fi
-
-	if test "$ac_cv_lbl_septel_api" = yes; then
-		AC_MSG_RESULT([yes ($septel_include_dir)])
-
-		V_INCLS="$V_INCLS -I$septel_include_dir"
-		ADDLOBJS="$ADDLOBJS $septel_tools_dir/asciibin.o $septel_tools_dir/bit2byte.o $septel_tools_dir/confirm.o $septel_tools_dir/fmtmsg.o $septel_tools_dir/gct_unix.o $septel_tools_dir/hqueue.o $septel_tools_dir/ident.o $septel_tools_dir/mem.o $septel_tools_dir/pack.o $septel_tools_dir/parse.o $septel_tools_dir/pool.o $septel_tools_dir/sdlsig.o $septel_tools_dir/strtonum.o $septel_tools_dir/timer.o $septel_tools_dir/trace.o"
-		ADDLARCHIVEOBJS="$ADDLARCHIVEOBJS $septel_tools_dir/asciibin.o $septel_tools_dir/bit2byte.o $septel_tools_dir/confirm.o $septel_tools_dir/fmtmsg.o $septel_tools_dir/gct_unix.o $septel_tools_dir/hqueue.o $septel_tools_dir/ident.o $septel_tools_dir/mem.o $septel_tools_dir/pack.o $septel_tools_dir/parse.o $septel_tools_dir/pool.o $septel_tools_dir/sdlsig.o $septel_tools_dir/strtonum.o $septel_tools_dir/timer.o $septel_tools_dir/trace.o"
-
-		if test "$V_PCAP" != septel ; then
-			 MODULE_C_SRC="$MODULE_C_SRC pcap-septel.c"
-		fi
-
-		AC_DEFINE(HAVE_SEPTEL_API, 1, [define if you have the Septel API])
-	else
-		AC_MSG_RESULT(no)
-
-		if test "$V_PCAP" = septel; then
-			# User requested "septel" capture type but
-			# we couldn't find the Septel API support.
-			AC_MSG_ERROR([Septel support requested with --with-pcap=septel, but the Septel headers weren't found at $septel_include_dir: make sure the Septel support is installed, specify a different path or paths if necessary, or don't request Septel support])
-		fi
-
-		if test "$want_septel" = yes; then
-			# User wanted Septel support but we couldn't find it.
-			AC_MSG_ERROR([Septel support requested with --with-septel, but the Septel headers weren't found at $septel_include_dir: make sure the Septel support is installed, specify a different path or paths if necessary, or don't request Septel support])
 		fi
 	fi
 fi
@@ -1537,7 +1473,7 @@ AS_HELP_STRING([--with-snf@<:@=DIR@:>@],[include Myricom SNF support (located in
 		# User requested Sniffer-only libpcap, so we'd better have
 		# the Sniffer API.
 		want_snf=yes
-	elif test "xxx_only" = yes; then
+	elif test "$xxx_only" = yes; then
 		# User requested something-else-only pcap, so they don't
 		# want SNF support.
 		want_snf=no
@@ -1624,81 +1560,6 @@ if test "$want_snf" != no; then
 
 		if test "$want_snf" = yes; then
 			AC_MSG_ERROR([Myricom Sniffer support requested with --with-snf, but the Sniffer headers weren't found at $snf_include_dir: make sure the Sniffer support is installed, specify a different path or paths if necessary, or don't request Sniffer support])
-		fi
-	fi
-fi
-
-# Check for Riverbed TurboCap support.
-AC_ARG_WITH([turbocap],
-AS_HELP_STRING([--with-turbocap@<:@=DIR@:>@],[include Riverbed TurboCap support (located in directory DIR, if supplied).  @<:@default=yes, if present@:>@]),
-[
-	if test "$withval" = no
-	then
-		# User explicitly doesn't want TurboCap
-		want_turbocap=no
-	elif test "$withval" = yes
-	then
-		# User wants TurboCap support but hasn't specified a directory.
-		want_turbocap=yes
-	else
-		# User wants TurboCap support with a specified directory.
-		want_turbocap=yes
-		turbocap_root=$withval
-	fi
-],[
-	if test "xxx_only" = yes; then
-		# User requested something-else-only pcap, so they don't
-		# want TurboCap support.
-		want_turbocap=no
-	else
-		#
-		# Use TurboCap API if present, otherwise don't
-		#
-		want_turbocap=ifpresent
-	fi
-])
-
-ac_cv_lbl_turbocap_api=no
-if test "$want_turbocap" != no; then
-
-	AC_MSG_CHECKING(whether TurboCap is supported)
-
-	AC_LBL_SAVE_CHECK_STATE
-	if test ! -z "$turbocap_root"; then
-		TURBOCAP_CFLAGS="-I$turbocap_root/include"
-		TURBOCAP_LDFLAGS="-L$turbocap_root/lib"
-		CFLAGS="$CFLAGS $TURBOCAP_CFLAGS"
-		LDFLAGS="$LDFLAGS $TURBOCAP_LDFLAGS"
-	fi
-
-	AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
-	[[
-	    #include <TcApi.h>
-	]],
-	[[
-	    TC_INSTANCE a; TC_PORT b; TC_BOARD c;
-	    TC_INSTANCE i;
-	    (void)TcInstanceCreateByName("foo", &i);
-	]])],
-	[ac_cv_lbl_turbocap_api=yes])
-
-	AC_LBL_RESTORE_CHECK_STATE
-	if test $ac_cv_lbl_turbocap_api = yes; then
-		AC_MSG_RESULT(yes)
-
-		MODULE_C_SRC="$MODULE_C_SRC pcap-tc.c"
-		V_INCLS="$V_INCLS $TURBOCAP_CFLAGS"
-		ADDITIONAL_LIBS="$ADDITIONAL_LIBS $TURBOCAP_LDFLAGS -lTcApi -lpthread -lstdc++"
-		ADDITIONAL_LIBS_STATIC="$ADDITIONAL_LIBS_STATIC $TURBOCAP_LDFLAGS -lTcApi -lpthread -lstdc++"
-		LIBS_PRIVATE="$LIBS_PRIVATE $TURBOCAP_LDFLAGS -lTcApi -lpthread -lstdc++"
-
-		AC_DEFINE(HAVE_TC_API, 1, [define if you have the TurboCap API])
-	else
-		AC_MSG_RESULT(no)
-
-		if test "$want_turbocap" = yes; then
-			# User wanted Turbo support but we couldn't find it.
-			AC_MSG_ERROR([TurboCap support requested with --with-turbocap, but the TurboCap headers weren't found: make sure the TurboCap support is installed or don't request TurboCap support])
 		fi
 	fi
 fi
@@ -2460,7 +2321,7 @@ AC_ARG_ENABLE([usb],
 # If somebody requested an XXX-only pcap, that doesn't include
 # additional mechanisms.
 #
-if test "xxx_only" != yes; then
+if test "$xxx_only" != yes; then
   case "$host_os" in
   linux*)
     dnl check for USB sniffing support
@@ -2602,7 +2463,7 @@ AS_HELP_STRING([--with-dpdk@<:@=DIR@:>@],[include DPDK support (located in direc
 		# User requested DPDK-only libpcap, so we'd better have
 		# the DPDK API.
 		want_dpdk=yes
-	elif test "xxx_only" = yes; then
+	elif test "$xxx_only" = yes; then
 		# User requested something-else-only pcap, so they don't
 		# want DPDK support.
 		want_dpdk=no
@@ -2789,7 +2650,7 @@ AC_ARG_ENABLE([bluetooth],
     [],
     [enable_bluetooth=ifsupportavailable])
 
-if test "xxx_only" = yes; then
+if test "$xxx_only" = yes; then
 	# User requested something-else-only pcap, so they don't
 	# want Bluetooth support.
 	enable_bluetooth=no
@@ -2850,9 +2711,9 @@ if test "x$enable_bluetooth" != "xno" ; then
 			# Bluetooth sniffing.
 			#
 			if test "x$enable_bluetooth" = "xyes" ; then
-				AC_MSG_ERROR(Bluetooth sniffing is not supported; install bluez-lib devel to enable it)
+				AC_MSG_ERROR(Bluetooth sniffing is not supported; install a Bluetooth devel library (libbluetooth-dev|bluez-libs-devel|bluez-dev|libbluetooth-devel|...) to enable it)
 			else
-				AC_MSG_NOTICE(Bluetooth sniffing is not supported; install bluez-lib devel to enable it)
+				AC_MSG_NOTICE(Bluetooth sniffing is not supported; install a Bluetooth devel library (libbluetooth-dev|bluez-libs-devel|bluez-dev|libbluetooth-devel|...) to enable it)
 			fi
 		    ])
 		;;
@@ -2872,7 +2733,7 @@ AC_ARG_ENABLE([dbus],
     [],
     [enable_dbus=ifavailable])
 
-if test "xxx_only" = yes; then
+if test "$xxx_only" = yes; then
 	# User requested something-else-only pcap, so they don't
 	# want D-Bus support.
 	enable_dbus=no
@@ -2955,7 +2816,7 @@ AC_ARG_ENABLE([rdma],
     [],
     [enable_rdma=ifavailable])
 
-if test "xxx_only" = yes; then
+if test "$xxx_only" = yes; then
 	# User requested something-else-only pcap, so they don't
 	# want RDMA support.
 	enable_rdma=no

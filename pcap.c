@@ -82,17 +82,9 @@ struct rtentry;		/* declarations in <net/if.h> */
 #include "pcap-dag.h"
 #endif /* HAVE_DAG_API */
 
-#ifdef HAVE_SEPTEL_API
-#include "pcap-septel.h"
-#endif /* HAVE_SEPTEL_API */
-
 #ifdef HAVE_SNF_API
 #include "pcap-snf.h"
 #endif /* HAVE_SNF_API */
-
-#ifdef HAVE_TC_API
-#include "pcap-tc.h"
-#endif /* HAVE_TC_API */
 
 #ifdef PCAP_SUPPORT_LINUX_USBMON
 #include "pcap-usb-linux.h"
@@ -124,10 +116,6 @@ struct rtentry;		/* declarations in <net/if.h> */
 
 #ifdef PCAP_SUPPORT_DPDK
 #include "pcap-dpdk.h"
-#endif
-
-#ifdef HAVE_AIRPCAP_API
-#include "pcap-airpcap.h"
 #endif
 
 #ifdef ENABLE_REMOTE
@@ -463,13 +451,6 @@ pcap_live_dump_ended_not_initialized(pcap_t *pcap, int sync _U_)
 	pcap_set_not_initialized_message(pcap);
 	return (PCAP_ERROR_NOT_ACTIVATED);
 }
-
-static PAirpcapHandle
-pcap_get_airpcap_handle_not_initialized(pcap_t *pcap)
-{
-	pcap_set_not_initialized_message(pcap);
-	return (NULL);
-}
 #endif
 
 /*
@@ -646,14 +627,8 @@ static struct capture_source_type {
 #ifdef HAVE_DAG_API
 	{ dag_findalldevs, dag_create },
 #endif
-#ifdef HAVE_SEPTEL_API
-	{ septel_findalldevs, septel_create },
-#endif
 #ifdef HAVE_SNF_API
 	{ snf_findalldevs, snf_create },
-#endif
-#ifdef HAVE_TC_API
-	{ TcFindAllDevs, TcCreate },
 #endif
 #ifdef PCAP_SUPPORT_BT
 	{ bt_findalldevs, bt_create },
@@ -678,9 +653,6 @@ static struct capture_source_type {
 #endif
 #ifdef PCAP_SUPPORT_DPDK
 	{ pcap_dpdk_findalldevs, pcap_dpdk_create },
-#endif
-#ifdef HAVE_AIRPCAP_API
-	{ airpcap_findalldevs, airpcap_create },
 #endif
 	{ NULL, NULL }
 };
@@ -1337,6 +1309,10 @@ pcapint_add_dev(pcap_if_list_t *devlistp, const char *name, bpf_u_int32 flags,
 	/*
 	 * Add it to the list, in the appropriate location.
 	 * First, get the "figure of merit" for this interface.
+	 *
+	 * To have the list of devices ordered correctly, after adding a
+	 * device to the list the device flags value must not change (i.e. it
+	 * should be set correctly beforehand).
 	 */
 	this_figure_of_merit = get_figure_of_merit(curdev);
 
@@ -1412,7 +1388,7 @@ pcapint_add_dev(pcap_if_list_t *devlistp, const char *name, bpf_u_int32 flags,
  * Add an entry for the "any" device.
  */
 pcap_if_t *
-pcap_add_any_dev(pcap_if_list_t *devlistp, char *errbuf)
+pcapint_add_any_dev(pcap_if_list_t *devlistp, char *errbuf)
 {
 	static const char any_descr[] = "Pseudo-device that captures on all interfaces";
 
@@ -1578,9 +1554,6 @@ pcap_lookupnet(const char *device, bpf_u_int32 *netp, bpf_u_int32 *maskp,
 	if (!device || strcmp(device, "any") == 0
 #ifdef HAVE_DAG_API
 	    || strstr(device, "dag") != NULL
-#endif
-#ifdef HAVE_SEPTEL_API
-	    || strstr(device, "septel") != NULL
 #endif
 #ifdef PCAP_SUPPORT_BT
 	    || strstr(device, "bluetooth") != NULL
@@ -2424,7 +2397,6 @@ initialize_ops(pcap_t *p)
 	p->setuserbuffer_op = pcap_setuserbuffer_not_initialized;
 	p->live_dump_op = pcap_live_dump_not_initialized;
 	p->live_dump_ended_op = pcap_live_dump_ended_not_initialized;
-	p->get_airpcap_handle_op = pcap_get_airpcap_handle_not_initialized;
 #endif
 
 	/*
@@ -3971,14 +3943,10 @@ pcap_live_dump_ended(pcap_t *p, int sync)
 PAirpcapHandle
 pcap_get_airpcap_handle(pcap_t *p)
 {
-	PAirpcapHandle handle;
+	(void)snprintf(p->errbuf, sizeof(p->errbuf),
+		"AirPcap devices are no longer supported");
 
-	handle = p->get_airpcap_handle_op(p);
-	if (handle == NULL) {
-		(void)snprintf(p->errbuf, sizeof(p->errbuf),
-		    "This isn't an AirPcap device");
-	}
-	return (handle);
+	return (NULL);
 }
 #endif
 
@@ -4254,10 +4222,23 @@ pcapint_load_code(const char *name)
 	return hModule;
 }
 
-pcap_funcptr_t
+/*
+ * Casting from FARPROC, which is the type of the return value of
+ * GetProcAddress(), to a function pointer gets a C4191 warning
+ * from Visual Studio 2022.
+ *
+ * Casting FARPROC to void * and returning the result, and then
+ * casting the void * to a function pointer, doesn't get the
+ * same warning.
+ *
+ * Given that, and given that the equivalent UN*X API, dlsym(),
+ * returns a void *, we have pcapint_find_function() return
+ * a void *.
+ */
+void *
 pcapint_find_function(pcap_code_handle_t code, const char *func)
 {
-	return (GetProcAddress(code, func));
+	return ((void *)GetProcAddress(code, func));
 }
 #endif
 
@@ -4458,12 +4439,6 @@ pcap_live_dump_ended_dead(pcap_t *p, int sync _U_)
 	    "Live packet dumping cannot be performed on a pcap_open_dead pcap_t");
 	return (-1);
 }
-
-static PAirpcapHandle
-pcap_get_airpcap_handle_dead(pcap_t *p _U_)
-{
-	return (NULL);
-}
 #endif /* _WIN32 */
 
 static void
@@ -4521,7 +4496,6 @@ pcap_open_dead_with_tstamp_precision(int linktype, int snaplen, u_int precision)
 	p->setuserbuffer_op = pcap_setuserbuffer_dead;
 	p->live_dump_op = pcap_live_dump_dead;
 	p->live_dump_ended_op = pcap_live_dump_ended_dead;
-	p->get_airpcap_handle_op = pcap_get_airpcap_handle_dead;
 #endif
 	p->breakloop_op = pcap_breakloop_dead;
 	p->cleanup_op = pcap_cleanup_dead;

@@ -11,6 +11,12 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       Merge four header files into gencode.c.
       Remove DAG card support on Windows as Linux is the only
         platform currently supported.
+      Remove code related to Riverbed TurboCap card.
+        Riverbed TurboCap hardware has reached EOA as of Jun 30 2014.
+      Remove dead code that supported Septel devices.
+      Remove outdated code related to AirPcap HW.
+        The Riverbed AirPcap Product has reached End of Availability
+        (EOA) as of December 31, 2017
     Link-layer types:
       Add LINKTYPE_ETW/DLT_ETW.
       Add LINKTYPE_NETANALYZER_NG/DLT_NETANALYZER_NG (pull request
@@ -34,6 +40,8 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       Deprecate pcap_compile_nopcap().
       Add support for filtering packets encapsulated with VXLAN (pull
         request #1273).
+      Eliminate trailing space in bpf_image() result.
+      Fix DECnet packet filtering on big-endian hosts.
     rpcap:
       Support user names and passwords in rpcap:// and rpcaps:// URLs.
       Add a -t flag to rpcapd to specify the data channel port; from
@@ -45,6 +53,9 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       Add a README.hurd.md file.
       Explain "any" device better in pcap_create(3PCAP).
       Cross-reference some man pages better.
+      Actualize README.dag and make it Markdown.
+      Add a README.snf.md file.
+      pcap-filter(7): Clarify Ethernet, IPv4 and IPv6.
     Building and testing:
       Apply GNU Hurd support patch from the Debian package.
       CI: Introduce and use LIBPCAP_CMAKE_TAINTED.
@@ -61,26 +72,75 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       At build time require a proof of suitable snprintf(3) implementation in
         libc (and document Solaris 9 and MinGW as unsupported because of that).
       Makefile.in: Update the .c.o build rule (Remove hacks for old SunOS 4).
-      CMake: Skip snprintf(3) tests when cross-compiling.
+      CMake: Skip snprintf(3) tests when cross-compiling; test whether
+        check_c_source_runs() with a trivial program and, if it doesn't
+        work, don't run tests that use it.
       autogen.sh: Allow to configure Autoconf warnings.
       autogen.sh: Delete all trailing blank lines at end of configure.
       Autoconf: Add support for libnl-tiny with pkg-config.
+      Autoconf: Fix building of something-only libpcap.
+      CI: Implement "make check".
+      Fix autotools and CMake issues with snprintf test and sanitizers.
+        Fixes issue #1396.
     Hurd:
       Support network capture devices too.
       Fix a few device activation bugs.
       Count and timestamp packets better.
       Add kernel filtering, fix userland filtering.
+    OpenBSD:
+      Use getprotobyname_r() correctly on OpenBSD.
+    DAG:
+      Always set PCAP_IF_CONNECTION_STATUS_NOT_APPLICABLE.
+      In dag_findalldevs() handle known errors better.
+      Trust dag_get_stream_erf_types() to be available.
+      Require the API to have 64-bit streams support.
+      Make device descriptions more useful, make dagN conditional.
+      Use PCAP_ERROR_NO_SUCH_DEVICE more in dag_activate().
+      Validate capture device names better.
+      Enumerate streams without trying to lock them.
+      If the environment variable ERF_FCS_BITS is set, require it to be either
+        0 or 16 or 32.  Likewise for ERF_DONT_STRIP_FCS (either 0 or 1).
+      Remove FCS quirks specific to 4.2S and 4.23S.
+      Fix packet filtering with low snaplen.
+      Fix ps_drop for stream drop counters.
+      Add experimental packet transmit support.
+    SNF:
+      Fix packet filtering with low snaplen.
+      Require SNF_VERSION_API >= 0x0003.
+      Improve device descriptions and flags.
+      Fill pcap_if_t in more consistently.
 
 DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
   Summary for 1.10.6 libpcap release (so far!)
+    Source code:
+      Fix "tcpdump -i <n>" for something-only libpcap builds.
+      Remove some unneeded includes.
+      pcapint_find_function() changed to return "void *" to avoid
+        warnings.
+    Packet filtering:
+      Make the chunk allocator's alignment more general and
+        platform-independent.
     Linux:
       Fix check for mac80211 phydev.
       Don't create monitor-mode interface if we're capturing on one.
     D-Bus:
       Fix message leak.
+    Capture file writing:
+      Don't close the output stream if it's stdout, just flush it.
+    Documentation:
+      Explicitly document that closing a pcap_t for a savefile opened
+        with pcap_fopen_offline() will close the standard I/O stream.
     Building and testing:
       Makefile.in: Include instrument-functions.c in the release tarball.
       CMake: Fix libnl usage with pkg-config.
+      CMake: Fix build with CMake 3.31.
+      CI: Report CMake version in builds.
+      CI: Visual Studio 2022 builds added, including ARM64 builds;
+        Visual Studio 2015 bilds dropped.
+      Don't build with sslutils.c if we don't have a TLS library.
+      Build on Windows with a newer version of OpenSSL.
+      CMake: generalize handling of non-x86 Windows architectures.
+      CI: use the -A flag for all Visual Studio generators.
 
 Friday, August 30, 2024 / The Tcpdump Group
   Summary for 1.10.5 libpcap release

@@ -24,14 +24,7 @@
 #ifdef _WIN32
   #include <ws2tcpip.h>
 #else
-  #include <sys/socket.h>
-
-  #ifdef __NetBSD__
-    #include <sys/param.h>
-  #endif
-
   #include <netinet/in.h>
-  #include <arpa/inet.h>
 #endif /* _WIN32 */
 
 #include <stdlib.h>
@@ -54,6 +47,7 @@
 #include "pcap/sll.h"
 #include "pcap/ipnet.h"
 #include "diag-control.h"
+#include "pcap-util.h"
 
 #include "scanner.h"
 
@@ -830,12 +824,28 @@ new_stmt(compiler_state_t *cstate, int code)
 }
 
 static struct block *
-gen_retblk(compiler_state_t *cstate, int v)
+gen_retblk_internal(compiler_state_t *cstate, int v)
 {
 	struct block *b = new_block(cstate, BPF_RET|BPF_K);
 
 	b->s.k = v;
 	return b;
+}
+
+static struct block *
+gen_retblk(compiler_state_t *cstate, int v)
+{
+	if (setjmp(cstate->top_ctx)) {
+		/*
+		 * gen_retblk() only fails because a memory
+		 * allocation failed in newchunk(), meaning
+		 * that it can't return a pointer.
+		 *
+		 * Return NULL.
+		 */
+		return NULL;
+	}
+	return gen_retblk_internal(cstate, v);
 }
 
 static inline PCAP_NORETURN_DEF void
@@ -853,9 +863,8 @@ pcap_compile(pcap_t *p, struct bpf_program *program,
 	WSADATA wsaData;
 #endif
 	compiler_state_t cstate;
-	const char * volatile xbuf = buf;
 	yyscan_t scanner = NULL;
-	volatile YY_BUFFER_STATE in_buffer = NULL;
+	YY_BUFFER_STATE in_buffer = NULL;
 	u_int len;
 	int rc;
 
@@ -932,7 +941,7 @@ pcap_compile(pcap_t *p, struct bpf_program *program,
 		rc = PCAP_ERROR;
 		goto quit;
 	}
-	in_buffer = pcap__scan_string(xbuf ? xbuf : "", scanner);
+	in_buffer = pcap__scan_string(buf ? buf : "", scanner);
 
 	/*
 	 * Associate the compiler state with the lexical analyzer
@@ -956,14 +965,15 @@ pcap_compile(pcap_t *p, struct bpf_program *program,
 	}
 
 	if (cstate.ic.root == NULL) {
+		cstate.ic.root = gen_retblk(&cstate, cstate.snaplen);
+
 		/*
 		 * Catch errors reported by gen_retblk().
 		 */
-		if (setjmp(cstate.top_ctx)) {
+		if (cstate.ic.root== NULL) {
 			rc = PCAP_ERROR;
 			goto quit;
 		}
-		cstate.ic.root = gen_retblk(&cstate, cstate.snaplen);
 	}
 
 	if (optimize && !cstate.no_optimize) {
@@ -1136,9 +1146,9 @@ finish_parse(compiler_state_t *cstate, struct block *p)
 	if (ppi_dlt_check != NULL)
 		gen_and(ppi_dlt_check, p);
 
-	backpatch(p, gen_retblk(cstate, cstate->snaplen));
+	backpatch(p, gen_retblk_internal(cstate, cstate->snaplen));
 	p->sense = !p->sense;
-	backpatch(p, gen_retblk(cstate, 0));
+	backpatch(p, gen_retblk_internal(cstate, 0));
 	cstate->ic.root = p->head;
 	return (0);
 }
@@ -2087,14 +2097,6 @@ gen_false(compiler_state_t *cstate)
 {
 	return gen_uncond(cstate, 0);
 }
-
-/*
- * Byte-swap a 32-bit number.
- * ("htonl()" or "ntohl()" won't work - we want to byte-swap even on
- * big-endian platforms.)
- */
-#define	SWAPLONG(y) \
-((((y)&0xff)<<24) | (((y)&0xff00)<<8) | (((y)&0xff0000)>>8) | (((y)>>24)&0xff))
 
 /*
  * Generate code to match a particular packet type.
@@ -5041,32 +5043,51 @@ gen_dnhostop(compiler_state_t *cstate, bpf_u_int32 addr, int dir)
 		abort();
 		/*NOTREACHED*/
 	}
+	/*
+	 * In a DECnet message inside an Ethernet frame the first two bytes
+	 * immediately after EtherType are the [litle-endian] DECnet message
+	 * length, which is irrelevant in this context.
+	 *
+	 * "pad = 1" means the third byte equals 0x81, thus it is the PLENGTH
+	 * 8-bit bitmap of the optional padding before the packet route header.
+	 * The bitmap always has bit 7 set to 1 and in this case has bits 0-6
+	 * (TOTAL-PAD-SEQUENCE-LENGTH) set to integer value 1.  The latter
+	 * means there aren't any PAD bytes after the bitmap, so the header
+	 * begins at the fourth byte.  "pad = 0" means bit 7 of the third byte
+	 * is set to 0, thus the header begins at the third byte.
+	 *
+	 * The header can be in several (as mentioned above) formats, all of
+	 * which begin with the FLAGS 8-bit bitmap, which always has bit 7
+	 * (PF, "pad field") set to 0 regardless of any padding present before
+	 * the header.  "Short header" means bits 0-2 of the bitmap encode the
+	 * integer value 2 (SFDP), and "long header" means value 6 (LFDP).
+	 *
+	 * For the DECnet address use SWAPSHORT(), which always swaps bytes,
+	 * because the wire encoding is little-endian and this function always
+	 * receives a big-endian address value.
+	 */
 	b0 = gen_linktype(cstate, ETHERTYPE_DN);
 	/* Check for pad = 1, long header case */
-	tmp = gen_mcmp(cstate, OR_LINKPL, 2, BPF_H,
-	    (bpf_u_int32)ntohs(0x0681), (bpf_u_int32)ntohs(0x07FF));
+	tmp = gen_mcmp(cstate, OR_LINKPL, 2, BPF_H, 0x8106U, 0xFF07U);
 	b1 = gen_cmp(cstate, OR_LINKPL, 2 + 1 + offset_lh,
-	    BPF_H, (bpf_u_int32)ntohs((u_short)addr));
+	    BPF_H, SWAPSHORT(addr));
 	gen_and(tmp, b1);
 	/* Check for pad = 0, long header case */
-	tmp = gen_mcmp(cstate, OR_LINKPL, 2, BPF_B, (bpf_u_int32)0x06,
-	    (bpf_u_int32)0x7);
+	tmp = gen_mcmp(cstate, OR_LINKPL, 2, BPF_B, 0x06U, 0x07U);
 	b2 = gen_cmp(cstate, OR_LINKPL, 2 + offset_lh, BPF_H,
-	    (bpf_u_int32)ntohs((u_short)addr));
+	    SWAPSHORT(addr));
 	gen_and(tmp, b2);
 	gen_or(b2, b1);
 	/* Check for pad = 1, short header case */
-	tmp = gen_mcmp(cstate, OR_LINKPL, 2, BPF_H,
-	    (bpf_u_int32)ntohs(0x0281), (bpf_u_int32)ntohs(0x07FF));
+	tmp = gen_mcmp(cstate, OR_LINKPL, 2, BPF_H, 0x8102U, 0xFF07U);
 	b2 = gen_cmp(cstate, OR_LINKPL, 2 + 1 + offset_sh, BPF_H,
-	    (bpf_u_int32)ntohs((u_short)addr));
+	    SWAPSHORT(addr));
 	gen_and(tmp, b2);
 	gen_or(b2, b1);
 	/* Check for pad = 0, short header case */
-	tmp = gen_mcmp(cstate, OR_LINKPL, 2, BPF_B, (bpf_u_int32)0x02,
-	    (bpf_u_int32)0x7);
+	tmp = gen_mcmp(cstate, OR_LINKPL, 2, BPF_B, 0x02U, 0x07U);
 	b2 = gen_cmp(cstate, OR_LINKPL, 2 + offset_sh, BPF_H,
-	    (bpf_u_int32)ntohs((u_short)addr));
+	    SWAPSHORT(addr));
 	gen_and(tmp, b2);
 	gen_or(b2, b1);
 
@@ -9449,19 +9470,11 @@ gen_vlan(compiler_state_t *cstate, bpf_u_int32 vlan_num, int has_vlan_tag)
  * label_num might be clobbered by longjmp - yeah, it might, but *WHO CARES*?
  * It's not *used* after setjmp returns.
  */
-struct block *
-gen_mpls(compiler_state_t *cstate, bpf_u_int32 label_num_arg,
+static struct block *
+gen_mpls_internal(compiler_state_t *cstate, bpf_u_int32 label_num,
     int has_label_num)
 {
-	volatile bpf_u_int32 label_num = label_num_arg;
 	struct	block	*b0, *b1;
-
-	/*
-	 * Catch errors reported by us and routines below us, and return NULL
-	 * on an error.
-	 */
-	if (setjmp(cstate->top_ctx))
-		return (NULL);
 
 	if (cstate->label_stack_depth > 0) {
 		/* just match the bottom-of-stack bit clear */
@@ -9527,6 +9540,19 @@ gen_mpls(compiler_state_t *cstate, bpf_u_int32 label_num_arg,
 	cstate->off_nl += 4;
 	cstate->label_stack_depth++;
 	return (b0);
+}
+
+struct block *
+gen_mpls(compiler_state_t *cstate, bpf_u_int32 label_num, int has_label_num)
+{
+	/*
+	 * Catch errors reported by us and routines below us, and return NULL
+	 * on an error.
+	 */
+	if (setjmp(cstate->top_ctx))
+		return (NULL);
+
+	return gen_mpls_internal(cstate, label_num, has_label_num);
 }
 
 /*
@@ -10405,29 +10431,16 @@ gen_mtp2type_abbrev(compiler_state_t *cstate, int type)
 	return b0;
 }
 
-/*
- * The jvalue_arg dance is to avoid annoying whining by compilers that
- * jvalue might be clobbered by longjmp - yeah, it might, but *WHO CARES*?
- * It's not *used* after setjmp returns.
- */
-struct block *
-gen_mtp3field_code(compiler_state_t *cstate, int mtp3field,
-    bpf_u_int32 jvalue_arg, int jtype, int reverse)
+static struct block *
+gen_mtp3field_code_internal(compiler_state_t *cstate, int mtp3field,
+    bpf_u_int32 jvalue, int jtype, int reverse)
 {
-	volatile bpf_u_int32 jvalue = jvalue_arg;
 	struct block *b0;
 	bpf_u_int32 val1 , val2 , val3;
 	u_int newoff_sio;
 	u_int newoff_opc;
 	u_int newoff_dpc;
 	u_int newoff_sls;
-
-	/*
-	 * Catch errors reported by us and routines below us, and return NULL
-	 * on an error.
-	 */
-	if (setjmp(cstate->top_ctx))
-		return (NULL);
 
 	newoff_sio = cstate->off_sio;
 	newoff_opc = cstate->off_opc;
@@ -10518,6 +10531,21 @@ gen_mtp3field_code(compiler_state_t *cstate, int mtp3field,
 		abort();
 	}
 	return b0;
+}
+
+struct block *
+gen_mtp3field_code(compiler_state_t *cstate, int mtp3field,
+    bpf_u_int32 jvalue, int jtype, int reverse)
+{
+	/*
+	 * Catch errors reported by us and routines below us, and return NULL
+	 * on an error.
+	 */
+	if (setjmp(cstate->top_ctx))
+		return (NULL);
+
+	return gen_mtp3field_code_internal(cstate, mtp3field, jvalue, jtype,
+	    reverse);
 }
 
 static struct block *

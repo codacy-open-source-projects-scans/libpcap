@@ -139,7 +139,11 @@ pcap_netmap_ioctl(pcap_t *p, u_long what, uint32_t *if_flags)
 	}
 #endif /* __linux__ */
 	bzero(&ifr, sizeof(ifr));
-	strncpy(ifr.ifr_name, d->req.nr_name, sizeof(ifr.ifr_name));
+	/*
+	 * ifreq.ifr_name and nmreq.nr_name have the same size and both
+	 * contain a NUL-terminated string.
+	 */
+	(void)pcapint_strlcpy(ifr.ifr_name, d->req.nr_name, sizeof(ifr.ifr_name));
 	switch (what) {
 	case SIOCSIFFLAGS:
 		/*
@@ -235,7 +239,7 @@ pcap_netmap_activate(pcap_t *p)
 	}
 #if 0
 	fprintf(stderr, "%s device %s priv %p fd %d ports %d..%d\n",
-	    __FUNCTION__, p->opt.device, d, d->fd,
+	    __func__, p->opt.device, d, d->fd,
 	    d->first_rx_ring, d->last_rx_ring);
 #endif
 	pn->d = d;

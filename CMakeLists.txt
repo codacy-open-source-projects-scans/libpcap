@@ -13,14 +13,21 @@ else(WIN32)
     #  on a "long-term support" version # of some OS and that
     #  version supplies an older version of CMake;
     #
-    #  otherwise, require 3.5, so we don't get messages warning
-    #  that support for versions of CMake lower than 3.5 is
+    #  otherwise, if it's a version less than 3.10, require only
+    #  3.5, just in case somebody is configuring with CMake
+    #  on a "long-term support" version # of some OS and that
+    #  version supplies an older version of CMake;
+    #
+    #  otherwise, require 3.10, so we don't get messages warning
+    #  that support for versions of CMake lower than 3.10 is
     #  deprecated.
     #
     if(CMAKE_VERSION VERSION_LESS "3.5")
         cmake_minimum_required(VERSION 2.8.12)
-    else()
+    elseif(CMAKE_VERSION VERSION_LESS "3.10")
         cmake_minimum_required(VERSION 3.5)
+    else()
+        cmake_minimum_required(VERSION 3.10)
     endif()
 endif(WIN32)
 
@@ -475,7 +482,6 @@ option(BUILD_SHARED_LIBS "Build shared libraries" ON)
 set(dpdk_ROOT "" CACHE PATH "Path to directory with include and lib subdirectories for DPDK")
 if(WIN32)
     set(Packet_ROOT "" CACHE PATH "Path to directory with include and lib subdirectories for packet.dll")
-    set(AirPcap_ROOT "" CACHE PATH "Path to directory with include and lib subdirectories for airpcap.dll")
 endif(WIN32)
 
 option(ENABLE_PROFILING "Enable code profiling" OFF)
@@ -527,13 +533,9 @@ endif(APPLE)
 option(DISABLE_RDMA "Disable RDMA sniffing support" OFF)
 
 option(DISABLE_DAG "Disable Endace DAG card support" OFF)
-
-option(DISABLE_SEPTEL "Disable Septel card support" OFF)
-set(SEPTEL_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../septel" CACHE PATH "Path to directory with include and lib subdirectories for Septel API")
+option(ENABLE_DAG_TX "Enable Endace DAG transmit support" OFF)
 
 option(DISABLE_SNF "Disable Myricom SNF support" OFF)
-
-option(DISABLE_TC "Disable Riverbed TurboCap support" OFF)
 
 #
 # Debugging options.
@@ -646,16 +648,23 @@ endif(USE_STATIC_RT)
 # on an IA-32 or x86-64 Linux box for an Arm embedded Linux box,
 # or building Arm code on an IA-32 or x86-64 Windows box.
 #
-# At least for the Windows case, people may do those builds by
-# setting the target with th -A flag to CMake; that causes
-# CMAKE_GENERATOR_PLATFORM to be set to the target.  If
-# CMAKE_GENERATOR_PLATFORM is set, compare it with
-# CMAKE_HOST_SYSTEM_PROCESSOR and, if they're not equal, set
-# CMAKE_CROSSCOMPILING to TRUE.
+# So just test whether check_c_source_runs() on a trivial program
+# works; if not, it's probably because the generated code won't
+# run on the platform on which we're running.
 #
-if (CMAKE_GENERATOR_PLATFORM AND
-    NOT CMAKE_GENERATOR_PLATFORM STREQUAL CMAKE_HOST_SYSTEM_PROCESSOR)
-    set(CMAKE_CROSSCOMPILING TRUE)
+include(CheckCSourceRuns)
+if (NOT CMAKE_CROSSCOMPILING)
+    check_c_source_runs("
+    int main()
+    {
+        return 0;
+    }
+    "
+        CHECK_C_SOURCE_RUNS_WORKS
+    )
+    if (NOT CHECK_C_SOURCE_RUNS_WORKS)
+        set(CMAKE_CROSSCOMPILING TRUE)
+    endif()
 endif()
 
 ###################################################################
@@ -761,39 +770,56 @@ if (NOT CMAKE_CROSSCOMPILING)
     #
     # Require a proof of suitable snprintf(3), same as in Autoconf.
     #
-    include(CheckCSourceRuns)
     check_c_source_runs("
     #include <stdio.h>
     #include <string.h>
     #include <inttypes.h>
     #include <sys/types.h>
 
+    #if defined(_WIN32) && !defined(_SSIZE_T_DEFINED)
+    /*
+     * On UN*Xes, this is a signed integer type of the same size as size_t.
+     *
+     * It's not defined by Visual Studio; we assume that ptrdiff_t will
+     * be a type that is a signed integer type of the same size as size_t.
+     */
+    typedef ptrdiff_t ssize_t;
+    #endif
+
+    /*
+     * Avoid trying to cast negative values to unsigned types, or doing
+     * shifts of signed types, in order not to have the test program fail
+     * if we're building with undefined-behavior sanitizers enabled.
+     */
     int main()
     {
       char buf[100];
-      uint64_t t = (uint64_t)1 << 32;
+      unsigned int ui = sizeof(buf);
+      int i = sizeof(buf);
+      int64_t i64 = INT64_C(0x100000000);
+      uint64_t ui64 = UINT64_C(0x100000000);
 
-      snprintf(buf, sizeof(buf), \"%zu\", sizeof(buf));
+      snprintf(buf, sizeof(buf), \"%zu\", (size_t)ui);
       if (strncmp(buf, \"100\", sizeof(buf)))
         return 1;
 
-      snprintf(buf, sizeof(buf), \"%zd\", -sizeof(buf));
+      snprintf(buf, sizeof(buf), \"%zd\", (ssize_t)(-i));
       if (strncmp(buf, \"-100\", sizeof(buf)))
         return 2;
 
-      snprintf(buf, sizeof(buf), \"%\" PRId64, -t);
+      snprintf(buf, sizeof(buf), \"%\" PRId64, -i64);
       if (strncmp(buf, \"-4294967296\", sizeof(buf)))
         return 3;
 
-      snprintf(buf, sizeof(buf), \"0o%\" PRIo64, t);
+      snprintf(buf, sizeof(buf), \"0o%\" PRIo64, ui64);
       if (strncmp(buf, \"0o40000000000\", sizeof(buf)))
         return 4;
 
-      snprintf(buf, sizeof(buf), \"0x%\" PRIx64, t);
+      snprintf(buf, sizeof(buf), \"0x%\" PRIx64, ui64);
       if (strncmp(buf, \"0x100000000\", sizeof(buf)))
         return 5;
 
-      snprintf(buf, sizeof(buf), \"%\" PRIu64, t);
+      snprintf(buf, sizeof(buf), \"%\" PRIu64, ui64);
       if (strncmp(buf, \"4294967296\", sizeof(buf)))
         return 6;
 
@@ -2598,13 +2624,10 @@ if(NOT DISABLE_DAG)
         cmake_push_check_state()
         set(CMAKE_REQUIRED_INCLUDES ${DAG_INCLUDE_DIRS})
         set(CMAKE_REQUIRED_LIBRARIES ${DAG_LIBRARIES})
-        check_function_exists(dag_attach_stream HAVE_DAG_STREAMS_API)
+        check_function_exists(dag_attach_stream64 HAVE_DAG_STREAMS_API)
         if(NOT HAVE_DAG_STREAMS_API)
-            message(FATAL_ERROR "DAG library lacks streams support")
+            message(FATAL_ERROR "DAG library lacks 64-bit streams support")
         endif()
-        check_function_exists(dag_attach_stream64 HAVE_DAG_LARGE_STREAMS_API)
-        check_function_exists(dag_get_erf_types HAVE_DAG_GET_ERF_TYPES)
-        check_function_exists(dag_get_stream_erf_types HAVE_DAG_GET_STREAM_ERF_TYPES)
         cmake_pop_check_state()
 
         include_directories(AFTER ${DAG_INCLUDE_DIRS})
@@ -2615,38 +2638,19 @@ if(NOT DISABLE_DAG)
         set(LIBS_STATIC "${LIBS_STATIC} ${DAG_LIBS_STATIC}")
         set(LIBS_PRIVATE "${LIBS_PRIVATE} ${DAG_LIBS_PRIVATE}")
 
-        if(HAVE_DAG_LARGE_STREAMS_API)
-            get_filename_component(DAG_LIBRARY_DIR ${DAG_LIBRARY} PATH)
-            check_library_exists(vdag vdag_set_device_info ${DAG_LIBRARY_DIR} HAVE_DAG_VDAG)
-            if(HAVE_DAG_VDAG)
-                set(PCAP_LINK_LIBRARIES ${PCAP_LINK_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
-                set(LIBS "${LIBS} ${CMAKE_THREAD_LIBS_INIT}")
-                set(LIBS_STATIC "${LIBS_STATIC} ${CMAKE_THREAD_LIBS_INIT}")
-                set(LIBS_PRIVATE "${LIBS_PRIVATE} ${CMAKE_THREAD_LIBS_INIT}")
-            endif()
+        get_filename_component(DAG_LIBRARY_DIR ${DAG_LIBRARY} PATH)
+        check_library_exists(vdag vdag_set_device_info ${DAG_LIBRARY_DIR} HAVE_DAG_VDAG)
+        if(HAVE_DAG_VDAG)
+            set(PCAP_LINK_LIBRARIES ${PCAP_LINK_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
+            set(LIBS "${LIBS} ${CMAKE_THREAD_LIBS_INIT}")
+            set(LIBS_STATIC "${LIBS_STATIC} ${CMAKE_THREAD_LIBS_INIT}")
+            set(LIBS_PRIVATE "${LIBS_PRIVATE} ${CMAKE_THREAD_LIBS_INIT}")
         endif()
-    endif()
-endif()
 
-# Check for Septel card support.
-set(PROJECT_EXTERNAL_OBJECT_LIST "")
-if(NOT DISABLE_SEPTEL)
-    #
-    # Do we have the msg.h header?
-    #
-    set(SEPTEL_INCLUDE_DIRS "${SEPTEL_ROOT}/INC")
-    cmake_push_check_state()
-    set(CMAKE_REQUIRED_INCLUDES ${SEPTEL_INCLUDE_DIRS})
-    check_include_file(msg.h HAVE_INC_MSG_H)
-    cmake_pop_check_state()
-    if(HAVE_INC_MSG_H)
-        #
-        # Yes.
-        #
-        include_directories(AFTER ${SEPTEL_INCLUDE_DIRS})
-        set(PROJECT_SOURCE_LIST_C ${PROJECT_SOURCE_LIST_C} pcap-septel.c)
-        set(PROJECT_EXTERNAL_OBJECT_LIST ${PROJECT_EXTERNAL_OBJECT_LIST} "${SEPTEL_ROOT}/asciibin.o ${SEPTEL_ROOT}/bit2byte.o ${SEPTEL_ROOT}/confirm.o ${SEPTEL_ROOT}/fmtmsg.o ${SEPTEL_ROOT}/gct_unix.o ${SEPTEL_ROOT}/hqueue.o ${SEPTEL_ROOT}/ident.o ${SEPTEL_ROOT}/mem.o ${SEPTEL_ROOT}/pack.o ${SEPTEL_ROOT}/parse.o ${SEPTEL_ROOT}/pool.o ${SEPTEL_ROOT}/sdlsig.o ${SEPTEL_ROOT}/strtonum.o ${SEPTEL_ROOT}/timer.o ${SEPTEL_ROOT}/trace.o")
-        set(HAVE_SEPTEL_API TRUE)
+        if(ENABLE_DAG_TX)
+            set(ENABLE_DAG_TX TRUE)
+        endif()
+        message(STATUS "Endace DAG transmit support (EXPERIMENTAL): ${ENABLE_DAG_TX}")
     endif()
 endif()
 
@@ -2674,48 +2678,6 @@ if(NOT DISABLE_SNF)
     endif()
 endif()
 
-# Check for Riverbed AirPcap support.
-if(NOT DISABLE_AIRPCAP)
-    #
-    # Try to find the AirPcap header file and library.
-    #
-    find_package(AirPcap)
-
-    #
-    # Did we succeed?
-    #
-    if(AirPcap_FOUND)
-        #
-        # Yes.
-        #
-        include_directories(AFTER ${AirPcap_INCLUDE_DIRS})
-        set(PROJECT_SOURCE_LIST_C ${PROJECT_SOURCE_LIST_C} pcap-airpcap.c)
-        set(HAVE_AIRPCAP_API TRUE)
-        set(PCAP_LINK_LIBRARIES ${PCAP_LINK_LIBRARIES} ${AirPcap_LIBRARIES})
-    endif()
-endif()
-
-# Check for Riverbed TurboCap support.
-if(NOT DISABLE_TC)
-    #
-    # Try to find the TurboCap header file and library.
-    #
-    find_package(TC)
-
-    #
-    # Did we succeed?
-    #
-    if(TC_FOUND)
-        #
-        # Yes.
-        #
-        include_directories(AFTER ${TC_INCLUDE_DIRS})
-        set(PROJECT_SOURCE_LIST_C ${PROJECT_SOURCE_LIST_C} pcap-tc.c)
-        set(HAVE_TC_API TRUE)
-        set(PCAP_LINK_LIBRARIES ${PCAP_LINK_LIBRARIES} ${TC_LIBRARIES} ${CMAKE_USE_PTHREADS_INIT} stdc++)
-    endif()
-endif()
-
 #
 # Remote capture support.
 #
@@ -2738,7 +2700,10 @@ if(ENABLE_REMOTE)
     check_struct_has_member("struct msghdr" msg_flags "ftmacros.h;sys/socket.h" HAVE_STRUCT_MSGHDR_MSG_FLAGS)
     cmake_pop_check_state()
     set(PROJECT_SOURCE_LIST_C ${PROJECT_SOURCE_LIST_C}
-        pcap-rpcap.c rpcap-protocol.c sockutils.c sslutils.c)
+        pcap-rpcap.c rpcap-protocol.c sockutils.c)
+    if(OPENSSL_FOUND)
+        set(PROJECT_SOURCE_LIST_C ${PROJECT_SOURCE_LIST_C} sslutils.c)
+    endif()
 endif(ENABLE_REMOTE)
 
 ###################################################################
@@ -2957,7 +2922,6 @@ endif()
 
 add_custom_command(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/scanner.c ${CMAKE_CURRENT_BINARY_DIR}/scanner.h
-    SOURCE ${pcap_SOURCE_DIR}/scanner.l
     COMMAND ${LEX_EXECUTABLE} -P pcap_ --header-file=scanner.h --nounput -o${CMAKE_CURRENT_BINARY_DIR}/scanner.c ${pcap_SOURCE_DIR}/scanner.l
     DEPENDS ${pcap_SOURCE_DIR}/scanner.l
 )
@@ -3032,7 +2996,6 @@ message(STATUS "Parser generator: ${YACC_EXECUTABLE}")
 #
 add_custom_command(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/grammar.c ${CMAKE_CURRENT_BINARY_DIR}/grammar.h
-    SOURCE ${pcap_BINARY_DIR}/grammar.y
     COMMAND ${YACC_EXECUTABLE} -p pcap_ -o ${CMAKE_CURRENT_BINARY_DIR}/grammar.c -d ${pcap_BINARY_DIR}/grammar.y
     DEPENDS ${pcap_BINARY_DIR}/grammar.y
 )

@@ -11,8 +11,8 @@ Platform-specific notes:
 * [Windows](doc/README.windows.md)
 
 Hardware-specific notes:
-* [Endace DAG](doc/README.dag)
-* [Intel Septel](doc/README.septel)
+* [Endace DAG](doc/README.dag.md)
+* [Myricom SNF](doc/README.snf.md)
 
 Libpcap can be built either with the configure script and `make`, or
 with CMake and any build system supported by CMake.
@@ -131,13 +131,13 @@ You can get around this by installing GCC.
 	Makefile.in	    - compilation rules (input to the configure script)
 	README.md	    - description of distribution
 	doc/README.aix	    - notes on using libpcap on AIX
-	doc/README.dag	    - notes on using libpcap to capture on Endace DAG devices
+	doc/README.dag.md   - notes on using libpcap to capture on Endace DAG devices
 	doc/README.haiku.md - notes on using libpcap on Haiku
 	doc/README.hpux	    - notes on using libpcap on HP-UX
 	doc/README.hurd.md  - notes on using libpcap on GNU/Hurd
 	doc/README.linux    - notes on using libpcap on Linux
 	doc/README.macos    - notes on using libpcap on macOS
-	doc/README.septel   - notes on using libpcap to capture on Intel/Septel devices
+	doc/README.snf.md   - notes on using libpcap to capture on Myricom SNF devices
 	doc/README.solaris.md - notes on using libpcap on Solaris
 	doc/README.windows.md - notes on using libpcap on Windows systems (with Npcap)
 	VERSION		    - version of this release
@@ -194,8 +194,6 @@ You can get around this by installing GCC.
 	pcap/socket.h	    - IP sockets support for various OSes
 	pcap/usb.h	    - public definition of DLT_USB header
 	pcap/vlan.h	    - VLAN-specific definitions
-	pcap-airpcap.c	    - AirPcap device capture support
-	pcap-airpcap.h	    - AirPcap device capture support
 	pcap-bpf.c	    - BSD Packet Filter support
 	pcap-bpf.h	    - header for backwards compatibility
 	pcap-bt-linux.c	    - Bluetooth capture support for Linux
@@ -227,12 +225,8 @@ You can get around this by installing GCC.
 	pcap-rdmasniff.h    - RDMA/InfiniBand capture support
 	pcap-rpcap.c	    - RPCAP protocol capture support
 	pcap-rpcap.h	    - RPCAP protocol capture support
-	pcap-septel.c       - Intel/Septel device capture support
-	pcap-septel.h       - Intel/Septel device capture support
 	pcap-snf.c	    - Myricom SNF device capture support
 	pcap-snf.h	    - Myricom SNF device capture support
-	pcap-tc.c	    - TurboCap device capture support
-	pcap-tc.h	    - TurboCap device capture support
 	pcap-types.h	    - header for OS-specific type includes
 	pcap-usb-linux.c    - USB capture support for Linux
 	pcap-usb-linux.h    - USB capture support for Linux

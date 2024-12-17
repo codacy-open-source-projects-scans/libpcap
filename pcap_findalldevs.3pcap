@@ -214,14 +214,16 @@ for IPv6 addresses, it can be interpreted as if it pointed to a
 For link-layer addresses, it can be interpreted as if it pointed to a
 .B "struct sockaddr_ll"
 (for
-.BR AF_PACKET )
+.BR AF_PACKET ,
+see
+.BR packet (7))
 or a
 .B "struct sockaddr_dl"
 (for
 .BR AF_LINK ).
 .PP
 The list of devices must be freed with
-.BR pcap_freealldevs (3PCAP),
+.BR pcap_freealldevs (),
 which frees the list pointed to by
 .IR alldevs .
 .SH RETURN VALUE
@@ -249,7 +251,9 @@ The
 .B PCAP_IF_UP
 and
 .B PCAP_IF_RUNNING
-constants became available in libpcap release 1.6.1.  The
+constants became available in libpcap release 1.6.1.
+.PP
+The
 .BR PCAP_IF_WIRELESS ,
 .BR PCAP_IF_CONNECTION_STATUS ,
 .BR PCAP_IF_CONNECTION_STATUS_UNKNOWN ,
