@@ -110,6 +110,9 @@ env DPDK_CFG="--log-level=debug -l0 -dlibrte_pmd_e1000.so -dlibrte_pmd_ixgbe.so 
 #include <rte_mempool.h>
 #include <rte_mbuf.h>
 #include <rte_bus.h>
+#include <rte_version.h>
+
+#include "diag-control.h"
 
 #include "pcap-int.h"
 #include "pcap-dpdk.h"
@@ -196,12 +199,18 @@ struct pcap_dpdk{
 };
 
 static struct rte_eth_conf port_conf = {
+#if (RTE_VERSION < RTE_VERSION_NUM(22, 0, 0, 0))
 	.rxmode = {
 		.split_hdr_size = 0,
 	},
 	.txmode = {
 		.mq_mode = ETH_MQ_TX_NONE,
 	},
+#else
+	.txmode = {
+		.mq_mode = RTE_ETH_MQ_TX_NONE,
+	},
+#endif
 };
 
 static void	dpdk_fmt_errmsg_for_rte_errno(char *, size_t, int,
@@ -271,7 +280,7 @@ static inline void calculate_timestamp(struct dpdk_ts_helper *helper,struct time
 	timeradd(&(helper->start_time), &cur_time, ts);
 }
 
-static uint32_t dpdk_gather_data(unsigned char *data, uint32_t len, struct rte_mbuf *mbuf)
+static void dpdk_gather_data(unsigned char *data, uint32_t len, struct rte_mbuf *mbuf)
 {
 	uint32_t total_len = 0;
 	while (mbuf && (total_len+mbuf->data_len) < len ){
@@ -279,7 +288,6 @@ static uint32_t dpdk_gather_data(unsigned char *data, uint32_t len, struct rte_m
 		total_len+=mbuf->data_len;
 		mbuf=mbuf->next;
 	}
-	return total_len;
 }
 
 
@@ -325,7 +333,6 @@ static int pcap_dpdk_dispatch(pcap_t *p, int max_cnt, pcap_handler cb, u_char *c
 	uint32_t caplen = 0;
 	u_char *bp = NULL;
 	int i=0;
-	unsigned int gather_len =0;
 	int pkt_cnt = 0;
 	u_char *large_buffer=NULL;
 	int timeout_ms = p->opt.timeout;
@@ -394,12 +401,12 @@ static int pcap_dpdk_dispatch(pcap_t *p, int max_cnt, pcap_handler cb, u_char *c
 				// use fast buffer pcap_tmp_buf if pkt_len is small, no need to call malloc and free
 				if ( pkt_len <= RTE_ETH_PCAP_SNAPLEN)
 				{
-					gather_len = dpdk_gather_data(pd->pcap_tmp_buf, RTE_ETH_PCAP_SNAPLEN, m);
+					dpdk_gather_data(pd->pcap_tmp_buf, RTE_ETH_PCAP_SNAPLEN, m);
 					bp = pd->pcap_tmp_buf;
 				}else{
 					// need call free later
 					large_buffer = (u_char *)malloc(caplen*sizeof(u_char));
-					gather_len = dpdk_gather_data(large_buffer, caplen, m);
+					dpdk_gather_data(large_buffer, caplen, m);
 					bp = large_buffer;
 				}
 
@@ -464,10 +471,9 @@ static int pcap_dpdk_stats(pcap_t *p, struct pcap_stat *ps)
 	calculate_timestamp(&(pd->ts_helper), &(pd->curr_ts));
 	rte_eth_stats_get(pd->portid,&(pd->curr_stats));
 	if (ps){
-		ps->ps_recv = pd->curr_stats.ipackets;
-		ps->ps_drop = pd->curr_stats.ierrors;
-		ps->ps_drop += pd->bpf_drop;
-		ps->ps_ifdrop = pd->curr_stats.imissed;
+		ps->ps_recv = (u_int)pd->curr_stats.ipackets;
+		ps->ps_drop = (u_int)(pd->curr_stats.ierrors + pd->bpf_drop);
+		ps->ps_ifdrop = (u_int)pd->curr_stats.imissed;
 	}
 	uint64_t delta_pkt = pd->curr_stats.ipackets - pd->prev_stats.ipackets;
 	struct timeval delta_tm;
@@ -497,7 +503,11 @@ static int check_link_status(uint16_t portid, struct rte_eth_link *plink)
 {
 	// wait up to 9 seconds to get link status
 	rte_eth_link_get(portid, plink);
+#if (RTE_VERSION < RTE_VERSION_NUM(22, 0, 0, 0))
 	return plink->link_status == ETH_LINK_UP;
+#else
+	return plink->link_status == RTE_ETH_LINK_UP;
+#endif
 }
 static void eth_addr_str(ETHER_ADDR_TYPE *addrp, char* mac_str, int len)
 {
@@ -536,7 +546,7 @@ static uint16_t portid_by_device(char * device)
 		return ret;
 	}
 	//check all chars are digital
-	for (int i=prefix_len; device[i]; i++){
+	for (size_t i=prefix_len; device[i]; i++){
 		if (device[i]<'0' || device[i]>'9'){
 			return ret;
 		}
@@ -770,18 +780,22 @@ static int pcap_dpdk_activate(pcap_t *p)
 		if (ret < 0)
 		{
 			// This returns a negative value on an error.
+DIAG_OFF_FORMAT_TRUNCATION
 			snprintf(p->errbuf, PCAP_ERRBUF_SIZE,
 			    "Can't open device %s: %s",
 			    p->opt.device, dpdk_pre_init_errbuf);
+DIAG_ON_FORMAT_TRUNCATION
 			// ret is set to the correct error
 			break;
 		}
 		if (ret == 0)
 		{
 			// This means DPDK isn't available on this machine.
+DIAG_OFF_FORMAT_TRUNCATION
 			snprintf(p->errbuf, PCAP_ERRBUF_SIZE,
 			    "Can't open device %s: DPDK is not available on this machine",
 			    p->opt.device);
+DIAG_ON_FORMAT_TRUNCATION
 			return PCAP_ERROR_NO_SUCH_DEVICE;
 		}
 
@@ -798,17 +812,21 @@ static int pcap_dpdk_activate(pcap_t *p)
 		nb_ports = rte_eth_dev_count_avail();
 		if (nb_ports == 0)
 		{
+DIAG_OFF_FORMAT_TRUNCATION
 			snprintf(p->errbuf, PCAP_ERRBUF_SIZE,
 			    "dpdk error: No Ethernet ports");
+DIAG_ON_FORMAT_TRUNCATION
 			ret = PCAP_ERROR;
 			break;
 		}
 
 		portid = portid_by_device(p->opt.device);
 		if (portid == DPDK_PORTID_MAX){
+DIAG_OFF_FORMAT_TRUNCATION
 			snprintf(p->errbuf, PCAP_ERRBUF_SIZE,
 			    "dpdk error: portid is invalid. device %s",
 			    p->opt.device);
+DIAG_ON_FORMAT_TRUNCATION
 			ret = PCAP_ERROR_NO_SUCH_DEVICE;
 			break;
 		}
@@ -825,18 +843,27 @@ static int pcap_dpdk_activate(pcap_t *p)
 			rte_socket_id());
 		if (pd->pktmbuf_pool == NULL)
 		{
+DIAG_OFF_FORMAT_TRUNCATION
 			dpdk_fmt_errmsg_for_rte_errno(p->errbuf,
 			    PCAP_ERRBUF_SIZE, rte_errno,
 			    "dpdk error: Cannot init mbuf pool");
+DIAG_ON_FORMAT_TRUNCATION
 			ret = PCAP_ERROR;
 			break;
 		}
 		// config dev
 		rte_eth_dev_info_get(portid, &dev_info);
+#if (RTE_VERSION < RTE_VERSION_NUM(22, 0, 0, 0))
 		if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
 		{
 			local_port_conf.txmode.offloads |=DEV_TX_OFFLOAD_MBUF_FAST_FREE;
 		}
+#else
+		if (dev_info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE)
+		{
+			local_port_conf.txmode.offloads |=RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE;
+		}
+#endif
 		// only support 1 queue
 		ret = rte_eth_dev_configure(portid, 1, 1, &local_port_conf);
 		if (ret < 0)
@@ -901,8 +928,10 @@ static int pcap_dpdk_activate(pcap_t *p)
 				rte_eth_dev_socket_id(portid));
 		if (tx_buffer == NULL)
 		{
+DIAG_OFF_FORMAT_TRUNCATION
 			snprintf(p->errbuf, PCAP_ERRBUF_SIZE,
 			    "dpdk error: Cannot allocate buffer for tx on port %u", portid);
+DIAG_ON_FORMAT_TRUNCATION
 			ret = PCAP_ERROR;
 			break;
 		}
@@ -926,8 +955,10 @@ static int pcap_dpdk_activate(pcap_t *p)
 		// check link status
 		is_port_up = check_link_status(portid, &link);
 		if (!is_port_up){
+DIAG_OFF_FORMAT_TRUNCATION
 			snprintf(p->errbuf, PCAP_ERRBUF_SIZE,
 			    "dpdk error: link is down, port=%u",portid);
+DIAG_ON_FORMAT_TRUNCATION
 			ret = PCAP_ERROR_IFACE_NOT_UP;
 			break;
 		}
@@ -970,7 +1001,11 @@ static int pcap_dpdk_activate(pcap_t *p)
 		RTE_LOG(INFO, USER1,"Port %d device: %s, MAC:%s, PCI:%s\n", portid, p->opt.device, pd->mac_addr, pd->pci_addr);
 		RTE_LOG(INFO, USER1,"Port %d Link Up. Speed %u Mbps - %s\n",
 							portid, link.link_speed,
+#if (RTE_VERSION < RTE_VERSION_NUM(22, 0, 0, 0))
 					(link.link_duplex == ETH_LINK_FULL_DUPLEX) ?
+#else
+					(link.link_duplex == RTE_ETH_LINK_FULL_DUPLEX) ?
+#endif
 						("full-duplex") : ("half-duplex\n"));
 	}
 	return ret;
@@ -1011,9 +1046,11 @@ int pcap_dpdk_findalldevs(pcap_if_list_t *devlistp, char *ebuf)
 		if (ret < 0)
 		{
 			// This returns a negative value on an error.
+DIAG_OFF_FORMAT_TRUNCATION
 			snprintf(ebuf, PCAP_ERRBUF_SIZE,
 			    "Can't look for DPDK devices: %s",
 			    dpdk_pre_init_errbuf);
+DIAG_ON_FORMAT_TRUNCATION
 			ret = PCAP_ERROR;
 			break;
 		}
@@ -1078,6 +1115,6 @@ pcapint_create_interface(const char *device, char *errbuf)
 const char *
 pcap_lib_version(void)
 {
-	return (PCAP_VERSION_STRING " (DPDK-only)");
+	return (PCAP_VERSION_STRING_WITH_ADDITIONAL_INFO("DPDK-only"));
 }
 #endif

@@ -35,6 +35,17 @@
 
   #include <netinet/in.h>
 
+  #if defined(__linux__) && defined(HAVE_ETHER_HOSTTON)
+    #include <features.h>
+    #if ! defined(__GLIBC__) && ! defined(__UCLIBC__)
+      /*
+       * In musl libc (which does not identify itself) ether_hostton() is
+       * present and does not work.
+       */
+      #undef HAVE_ETHER_HOSTTON
+    #endif
+  #endif // defined(__linux__) && defined(HAVE_ETHER_HOSTTON)
+
   #ifdef HAVE_ETHER_HOSTTON
     #if defined(NET_ETHERNET_H_DECLARES_ETHER_HOSTTON)
       /*
@@ -116,7 +127,6 @@
 
 #ifndef NTOHL
 #define NTOHL(x) (x) = ntohl(x)
-#define NTOHS(x) (x) = ntohs(x)
 #endif
 
 /*
@@ -296,9 +306,7 @@ pcap_nametoport(const char *name, int *port, int *proto)
 	struct addrinfo hints, *res, *ai;
 	int error;
 	struct sockaddr_in *in4;
-#ifdef INET6
 	struct sockaddr_in6 *in6;
-#endif
 	int tcp_port = -1;
 	int udp_port = -1;
 
@@ -338,13 +346,11 @@ pcap_nametoport(const char *name, int *port, int *proto)
 					tcp_port = ntohs(in4->sin_port);
 					break;
 				}
-#ifdef INET6
 				if (ai->ai_addr->sa_family == AF_INET6) {
 					in6 = (struct sockaddr_in6 *)ai->ai_addr;
 					tcp_port = ntohs(in6->sin6_port);
 					break;
 				}
-#endif
 			}
 		}
 		freeaddrinfo(res);
@@ -382,13 +388,11 @@ pcap_nametoport(const char *name, int *port, int *proto)
 					udp_port = ntohs(in4->sin_port);
 					break;
 				}
-#ifdef INET6
 				if (ai->ai_addr->sa_family == AF_INET6) {
 					in6 = (struct sockaddr_in6 *)ai->ai_addr;
 					udp_port = ntohs(in6->sin6_port);
 					break;
 				}
-#endif
 			}
 		}
 		freeaddrinfo(res);
@@ -476,23 +480,37 @@ pcap_nametoproto(const char *str)
 	 * We have Linux's reentrant getprotobyname_r().
 	 */
 	struct protoent result_buf;
-	char buf[1024];	/* arbitrary size */
+	char buf[1024];	// "...1024 bytes should be sufficient for most applications."
 	int err;
 
 	err = getprotobyname_r(str, &result_buf, buf, sizeof buf, &p);
+	/*
+	 * As far as GNU libc implementation goes, an "error" means the
+	 * protocol database could not be searched, which could mean err ==
+	 * ERANGE if the buffer is too small or ENOENT if the protocols(5)
+	 * file does not exist (the man page does not document the latter
+	 * eventuality).  If the database has been searched normally and the
+	 * requested protocol name was not found, it is not an "error" and
+	 * err == 0.
+	 *
+	 * This notwithstanding, p == NULL iff a record was not found for any
+	 * reason (whether an "error" or not), which is the same semantics as
+	 * in every other HAVE_xxxxx branch of this block.  The final check
+	 * after the block will catch that if necessary.
+	 */
 	if (err != 0) {
 		/*
 		 * XXX - dynamically allocate the buffer, and make it
 		 * bigger if we get ERANGE back?
 		 */
-		return 0;
+		return PROTO_UNDEF;
 	}
   #elif defined(HAVE_SOLARIS_GETPROTOBYNAME_R)
 	/*
 	 * We have Solaris's reentrant getprotobyname_r().
 	 */
 	struct protoent result_buf;
-	char buf[1024];	/* arbitrary size */
+	char buf[1024];	// "...must be at least 1024 bytes."
 
 	p = getprotobyname_r(str, &result_buf, buf, (int)sizeof buf);
   #elif defined(HAVE_AIX_GETPROTOBYNAME_R)
@@ -551,15 +569,15 @@ PCAP_API_DEF struct eproto eproto_db[] = {
 	{ "atalk", ETHERTYPE_ATALK },
 	{ "decnet", ETHERTYPE_DN },
 	{ "ip", ETHERTYPE_IP },
-#ifdef INET6
 	{ "ip6", ETHERTYPE_IPV6 },
-#endif
 	{ "lat", ETHERTYPE_LAT },
+	{ "lldp", ETHERTYPE_LLDP },
 	{ "loopback", ETHERTYPE_LOOPBACK },
 	{ "mopdl", ETHERTYPE_MOPDL },
 	{ "moprc", ETHERTYPE_MOPRC },
 	{ "rarp", ETHERTYPE_REVARP },
 	{ "sca", ETHERTYPE_SCA },
+	{ "slow", ETHERTYPE_SLOW },
 	{ (char *)0, 0 }
 };
 
@@ -601,8 +619,8 @@ pcap_nametollc(const char *s)
 }
 
 /* Hex digit to 8-bit unsigned integer. */
-static inline u_char
-xdtoi(u_char c)
+u_char
+pcapint_xdtoi(const u_char c)
 {
 	if (c >= '0' && c <= '9')
 		return (u_char)(c - '0');
@@ -613,7 +631,7 @@ xdtoi(u_char c)
 }
 
 int
-__pcap_atoin(const char *s, bpf_u_int32 *addr)
+pcapint_atoin(const char *s, bpf_u_int32 *addr)
 {
 	u_int n;
 	int len;
@@ -649,7 +667,7 @@ __pcap_atoin(const char *s, bpf_u_int32 *addr)
  * normal addressing purposes, but either can appear on the wire.
  */
 int
-__pcap_atodn(const char *s, bpf_u_int32 *addr)
+pcapint_atodn(const char *s, bpf_u_int32 *addr)
 {
 #define AREASHIFT 10
 #define AREAMASK 0176000
@@ -729,6 +747,64 @@ __pcap_atodn(const char *s, bpf_u_int32 *addr)
 }
 
 /*
+ * libpcap ARCnet address format is "^\$[0-9a-fA-F]{1,2}$" in regexp syntax.
+ * Iff the given string is a well-formed ARCnet address, parse the string,
+ * store the 8-bit unsigned value into the provided integer and return 1.
+ * Otherwise return 0.
+ *
+ *  --> START -- $ --> DOLLAR -- [0-9a-fA-F] --> HEX1 -- \0 -->-+
+ *        |              |                        |             |
+ *       [.]            [.]                  [0-9a-fA-F]        |
+ *        |              |                        |             |
+ *        v              v                        v             v
+ *    (invalid) <--------+-<---------------[.]-- HEX2 -- \0 -->-+--> (valid)
+ */
+int
+pcapint_atoan(const char *s, uint8_t *addr)
+{
+	enum {
+		START,
+		DOLLAR,
+		HEX1,
+		HEX2,
+	} fsm_state = START;
+	uint8_t tmp = 0;
+
+	while (*s) {
+		switch (fsm_state) {
+		case START:
+			if (*s != '$')
+				goto invalid;
+			fsm_state = DOLLAR;
+			break;
+		case DOLLAR:
+			if (! PCAP_ISXDIGIT(*s))
+				goto invalid;
+			tmp = pcapint_xdtoi(*s);
+			fsm_state = HEX1;
+			break;
+		case HEX1:
+			if (! PCAP_ISXDIGIT(*s))
+				goto invalid;
+			tmp <<= 4;
+			tmp |= pcapint_xdtoi(*s);
+			fsm_state = HEX2;
+			break;
+		case HEX2:
+			goto invalid;
+		} // switch
+		s++;
+	} // while
+	if (fsm_state == HEX1 || fsm_state == HEX2) {
+		*addr = tmp;
+		return 1;
+	}
+
+invalid:
+	return 0;
+}
+
+/*
  * Convert 's', which can have the one of the forms:
  *
  *	"xx:xx:xx:xx:xx:xx"
@@ -743,8 +819,8 @@ __pcap_atodn(const char *s, bpf_u_int32 *addr)
 u_char *
 pcap_ether_aton(const char *s)
 {
-	register u_char *ep, *e;
-	register u_char d;
+	u_char *ep, *e;
+	u_char d;
 
 	e = ep = (u_char *)malloc(6);
 	if (e == NULL)
@@ -753,10 +829,10 @@ pcap_ether_aton(const char *s)
 	while (*s) {
 		if (*s == ':' || *s == '.' || *s == '-')
 			s += 1;
-		d = xdtoi(*s++);
+		d = pcapint_xdtoi(*s++);
 		if (PCAP_ISXDIGIT(*s)) {
 			d <<= 4;
-			d |= xdtoi(*s++);
+			d |= pcapint_xdtoi(*s++);
 		}
 		*ep++ = d;
 	}
@@ -775,8 +851,8 @@ pcap_ether_aton(const char *s)
 u_char *
 pcap_ether_hostton(const char *name)
 {
-	register struct pcap_etherent *ep;
-	register u_char *ap;
+	struct pcap_etherent *ep;
+	u_char *ap;
 	static thread_local FILE *fp = NULL;
 	static thread_local int init = 0;
 
@@ -810,7 +886,7 @@ pcap_ether_hostton(const char *name)
 u_char *
 pcap_ether_hostton(const char *name)
 {
-	register u_char *ap;
+	u_char *ap;
 	u_char a[6];
 	char namebuf[1024];
 

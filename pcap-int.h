@@ -68,10 +68,28 @@
 #endif
 
 /*
- * Version string.
- * Uses PACKAGE_VERSION from config.h.
+ * Version string trailer.
+ * Uses SIZEOF_TIME_T from config.h.
+ * (There's no need to announce the pointer size; if it doesn't
+ * match the pointer size in code linked with libpcap, either
+ * build-time linking or run-time linking will fail.)
  */
-#define PCAP_VERSION_STRING "libpcap version " PACKAGE_VERSION
+#if SIZEOF_TIME_T == 8
+  #define PCAP_SIZEOF_TIME_T_BITS_STRING "64"
+#elif SIZEOF_TIME_T == 4
+  #define PCAP_SIZEOF_TIME_T_BITS_STRING "32"
+#else
+  #error Unknown time_t size
+#endif
+
+/*
+ * Version string.
+ * Uses PACKAGE_VERSION from config.h and PCAP_SIZEOF_TIME_T_BITS_STRING.
+ */
+#define PCAP_VERSION_STRING \
+	"libpcap version " PACKAGE_VERSION " (" PCAP_SIZEOF_TIME_T_BITS_STRING "-bit time_t)"
+#define PCAP_VERSION_STRING_WITH_ADDITIONAL_INFO(additional_info) \
+	"libpcap version " PACKAGE_VERSION " (" PCAP_SIZEOF_TIME_T_BITS_STRING "-bit time_t, " additional_info ")"
 
 #ifdef __cplusplus
 extern "C" {
@@ -108,19 +126,6 @@ extern int pcapint_utf_8_mode;
  * Map packet buffers with 32-bit addresses.
  */
 extern int pcapint_mmap_32bit;
-
-/*
- * Swap byte ordering of unsigned long long timestamp on a big endian
- * machine.
- */
-#define SWAPLL(ull)  ((ull & 0xff00000000000000ULL) >> 56) | \
-                      ((ull & 0x00ff000000000000ULL) >> 40) | \
-                      ((ull & 0x0000ff0000000000ULL) >> 24) | \
-                      ((ull & 0x000000ff00000000ULL) >> 8)  | \
-                      ((ull & 0x00000000ff000000ULL) << 8)  | \
-                      ((ull & 0x0000000000ff0000ULL) << 24) | \
-                      ((ull & 0x000000000000ff00ULL) << 40) | \
-                      ((ull & 0x00000000000000ffULL) << 56)
 
 /*
  * Maximum snapshot length.
@@ -368,6 +373,12 @@ struct pcap {
  * BPF code generation flags.
  */
 #define BPF_SPECIAL_VLAN_HANDLING	0x00000001	/* special VLAN handling for Linux */
+/*
+ * Special handling of packet type and ifindex, which are some of the auxiliary
+ * data items available in Linux >= 2.6.27.  Disregard protocol and netlink
+ * attributes for now.
+ */
+#define BPF_SPECIAL_BASIC_HANDLING	0x00000002
 
 /*
  * User data structure for the one-shot callback used for pcap_next()
@@ -381,6 +392,9 @@ struct oneshot_userdata {
 
 #ifndef min
 #define min(a, b) ((a) > (b) ? (b) : (a))
+#endif
+#ifndef max
+#define max(a, b) ((a) > (b) ? (a) : (b))
 #endif
 
 int	pcapint_offline_read(pcap_t *, int, pcap_handler, u_char *);

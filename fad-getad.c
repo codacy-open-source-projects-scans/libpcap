@@ -58,16 +58,9 @@
  * we end up including both the OS's <net/bpf.h> and our <pcap/bpf.h>,
  * and their definitions of some data structures collide.
  */
-#if defined(__linux__) && defined(AF_PACKET)
-# ifdef HAVE_NETPACKET_PACKET_H
-/* Linux distributions with newer glibc */
-#  include <netpacket/packet.h>
-# else /* HAVE_NETPACKET_PACKET_H */
-/* Linux distributions with older glibc */
-#  include <linux/types.h>
-#  include <linux/if_packet.h>
-# endif /* HAVE_NETPACKET_PACKET_H */
-#endif /* defined(__linux__) && defined(AF_PACKET) */
+#ifdef __linux__
+#include <netpacket/packet.h>
+#endif
 
 /*
  * This is fun.
@@ -122,7 +115,7 @@ get_sa_len(struct sockaddr *addr)
 		return (sizeof (struct sockaddr_in6));
 #endif
 
-#if defined(__linux__) && defined(AF_PACKET)
+#if defined(__linux__)
 	case AF_PACKET:
 		return (sizeof (struct sockaddr_ll));
 #endif
@@ -152,7 +145,7 @@ pcapint_findalldevs_interfaces(pcap_if_list_t *devlistp, char *errbuf,
 {
 	struct ifaddrs *ifap, *ifa;
 	struct sockaddr *addr, *netmask, *broadaddr, *dstaddr;
-	size_t addr_size, broadaddr_size, dstaddr_size;
+	size_t addr_size, netmask_size, broadaddr_size, dstaddr_size;
 	int ret = 0;
 	char *p, *q;
 
@@ -225,11 +218,18 @@ pcapint_findalldevs_interfaces(pcap_if_list_t *devlistp, char *errbuf,
 		if (ifa->ifa_addr != NULL) {
 			addr = ifa->ifa_addr;
 			addr_size = SA_LEN(addr);
-			netmask = ifa->ifa_netmask;
+			if (ifa->ifa_netmask != NULL) {
+				netmask = ifa->ifa_netmask;
+				netmask_size = SA_LEN(ifa->ifa_netmask);
+			} else {
+				netmask = NULL;
+				netmask_size = 0;
+			}
 		} else {
 			addr = NULL;
 			addr_size = 0;
 			netmask = NULL;
+			netmask_size = 0;
 		}
 
 		/*
@@ -269,7 +269,7 @@ pcapint_findalldevs_interfaces(pcap_if_list_t *devlistp, char *errbuf,
 		 */
 		if (pcapint_add_addr_to_if(devlistp, ifa->ifa_name, ifa->ifa_flags,
 		    get_flags_func,
-		    addr, addr_size, netmask, addr_size,
+		    addr, addr_size, netmask, netmask_size,
 		    broadaddr, broadaddr_size, dstaddr, dstaddr_size,
 		    errbuf) < 0) {
 			ret = -1;

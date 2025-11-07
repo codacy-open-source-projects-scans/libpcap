@@ -93,6 +93,7 @@
 #include <linux/ethtool.h>
 #include <netinet/in.h>
 #include <linux/if_ether.h>
+#include <linux/netlink.h>
 
 #include <linux/if_arp.h>
 #ifndef ARPHRD_IEEE802154
@@ -623,12 +624,17 @@ if_type_cb(struct nl_msg *msg, void* arg)
 	nla_parse(tb_msg, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
 		genlmsg_attrlen(gnlh, 0), NULL);
 
-	if (!tb_msg[NL80211_ATTR_IFTYPE]) {
-		return NL_SKIP;
+	/*
+	 * We sent a message asking for info about a single index.
+	 * To be really paranoid, we could check if the index matched
+	 * by examining nla_get_u32(tb_msg[NL80211_ATTR_IFINDEX]).
+	 */
+
+	if (tb_msg[NL80211_ATTR_IFTYPE]) {
+		*type = nla_get_u32(tb_msg[NL80211_ATTR_IFTYPE]);
 	}
 
-	*type = nla_get_u32(tb_msg[NL80211_ATTR_IFTYPE]);
-	return NL_STOP;
+	return NL_SKIP;
 }
 
 static int
@@ -643,9 +649,6 @@ get_if_type(pcap_t *handle, int sock_fd, struct nl80211_state *state,
 	if (ifindex == -1)
 		return PCAP_ERROR;
 
-	struct nl_cb *cb = nl_cb_alloc(NL_CB_DEFAULT);
-	nl_cb_set(cb, NL_CB_VALID, NL_CB_CUSTOM, if_type_cb, (void*)type);
-
 	msg = nlmsg_alloc();
 	if (!msg) {
 		snprintf(handle->errbuf, PCAP_ERRBUF_SIZE,
@@ -653,11 +656,13 @@ get_if_type(pcap_t *handle, int sock_fd, struct nl80211_state *state,
 		return PCAP_ERROR;
 	}
 
-	genlmsg_put(msg, 0, 0, genl_family_get_id(state->nl80211), 0,
+	genlmsg_put(msg, NL_AUTO_PORT, NL_AUTO_SEQ,
+		    genl_family_get_id(state->nl80211), 0,
 		    0, NL80211_CMD_GET_INTERFACE, 0);
 	NLA_PUT_U32(msg, NL80211_ATTR_IFINDEX, ifindex);
 
-	err = nl_send_auto_complete(state->nl_sock, msg);
+	err = nl_send_auto(state->nl_sock, msg);
+	nlmsg_free(msg);
 	if (err < 0) {
 		if (err == -NLE_FAILURE) {
 			/*
@@ -667,7 +672,6 @@ get_if_type(pcap_t *handle, int sock_fd, struct nl80211_state *state,
 			 * to that, but there's not much we can do
 			 * about that.)
 			 */
-			nlmsg_free(msg);
 			return 0;
 		} else {
 			/*
@@ -675,20 +679,41 @@ get_if_type(pcap_t *handle, int sock_fd, struct nl80211_state *state,
 			 * available.
 			 */
 			snprintf(handle->errbuf, PCAP_ERRBUF_SIZE,
-			    "%s: nl_send_auto_complete failed getting interface type: %s",
+			    "%s: nl_send_auto failed getting interface type: %s",
 			    device, nl_geterror(-err));
-			nlmsg_free(msg);
 			return PCAP_ERROR;
 		}
 	}
 
-	nl_recvmsgs(state->nl_sock, cb);
+	struct nl_cb *cb = nl_cb_alloc(NL_CB_DEFAULT);
+	nl_cb_set(cb, NL_CB_VALID, NL_CB_CUSTOM, if_type_cb, (void*)type);
+	err = nl_recvmsgs(state->nl_sock, cb);
+	nl_cb_put(cb);
+
+	if (err < 0) {
+		snprintf(handle->errbuf, PCAP_ERRBUF_SIZE,
+		    "%s: nl_recvmsgs failed getting interface type: %s",
+		    device, nl_geterror(-err));
+		return PCAP_ERROR;
+	}
+
+	/*
+	* If this is a mac80211 device not in monitor mode, nl_sock will be
+	* reused for add_mon_if. So we must wait for the ACK here so that
+	* add_mon_if does not receive it instead and incorrectly interpret
+	* the ACK as its NEW_INTERFACE command succeeding, even when it fails.
+	*/
+	err = nl_wait_for_ack(state->nl_sock);
+	if (err < 0) {
+		snprintf(handle->errbuf, PCAP_ERRBUF_SIZE,
+		    "%s: nl_wait_for_ack failed getting interface type: %s",
+		    device, nl_geterror(-err));
+		return PCAP_ERROR;
+	}
 
 	/*
 	 * Success.
 	 */
-	nlmsg_free(msg);
-
 	return 1;
 
 nla_put_failure:
@@ -696,6 +721,7 @@ nla_put_failure:
 	    "%s: nl_put failed getting interface type",
 	    device);
 	nlmsg_free(msg);
+	// Do not call nl_cb_put(): nl_cb_alloc() has not been called.
 	return PCAP_ERROR;
 }
 
@@ -719,7 +745,8 @@ add_mon_if(pcap_t *handle, int sock_fd, struct nl80211_state *state,
 		return PCAP_ERROR;
 	}
 
-	genlmsg_put(msg, 0, 0, genl_family_get_id(state->nl80211), 0,
+	genlmsg_put(msg, NL_AUTO_PORT, NL_AUTO_SEQ,
+		    genl_family_get_id(state->nl80211), 0,
 		    0, NL80211_CMD_NEW_INTERFACE, 0);
 	NLA_PUT_U32(msg, NL80211_ATTR_IFINDEX, ifindex);
 DIAG_OFF_NARROWING
@@ -727,9 +754,12 @@ DIAG_OFF_NARROWING
 DIAG_ON_NARROWING
 	NLA_PUT_U32(msg, NL80211_ATTR_IFTYPE, NL80211_IFTYPE_MONITOR);
 
-	err = nl_send_auto_complete(state->nl_sock, msg);
+	err = nl_send_sync(state->nl_sock, msg); // calls nlmsg_free()
 	if (err < 0) {
-		if (err == -NLE_FAILURE) {
+		switch (err) {
+
+		case -NLE_FAILURE:
+		case -NLE_AGAIN:
 			/*
 			 * Device not available; our caller should just
 			 * keep trying.  (libnl 2.x maps ENFILE to
@@ -737,41 +767,25 @@ DIAG_ON_NARROWING
 			 * to that, but there's not much we can do
 			 * about that.)
 			 */
-			nlmsg_free(msg);
 			return 0;
-		} else {
+
+		case -NLE_OPNOTSUPP:
+			/*
+			 * Device is a mac80211 device but adding it as a
+			 * monitor mode device isn't supported.  Report our
+			 * error.
+			 */
+			return PCAP_ERROR_RFMON_NOTSUP;
+
+		default:
 			/*
 			 * Real failure, not just "that device is not
-			 * available.
+			 * available."  Report a generic error, using the
+			 * error message from libnl.
 			 */
 			snprintf(handle->errbuf, PCAP_ERRBUF_SIZE,
-			    "%s: nl_send_auto_complete failed adding %s interface: %s",
+			    "%s: nl_send_sync failed adding %s interface: %s",
 			    device, mondevice, nl_geterror(-err));
-			nlmsg_free(msg);
-			return PCAP_ERROR;
-		}
-	}
-	err = nl_wait_for_ack(state->nl_sock);
-	if (err < 0) {
-		if (err == -NLE_FAILURE) {
-			/*
-			 * Device not available; our caller should just
-			 * keep trying.  (libnl 2.x maps ENFILE to
-			 * NLE_FAILURE; it can also map other errors
-			 * to that, but there's not much we can do
-			 * about that.)
-			 */
-			nlmsg_free(msg);
-			return 0;
-		} else {
-			/*
-			 * Real failure, not just "that device is not
-			 * available.
-			 */
-			snprintf(handle->errbuf, PCAP_ERRBUF_SIZE,
-			    "%s: nl_wait_for_ack failed adding %s interface: %s",
-			    device, mondevice, nl_geterror(-err));
-			nlmsg_free(msg);
 			return PCAP_ERROR;
 		}
 	}
@@ -779,7 +793,6 @@ DIAG_ON_NARROWING
 	/*
 	 * Success.
 	 */
-	nlmsg_free(msg);
 
 	/*
 	 * Try to remember the monitor device.
@@ -823,31 +836,22 @@ del_mon_if(pcap_t *handle, int sock_fd, struct nl80211_state *state,
 		return PCAP_ERROR;
 	}
 
-	genlmsg_put(msg, 0, 0, genl_family_get_id(state->nl80211), 0,
+	genlmsg_put(msg, NL_AUTO_PORT, NL_AUTO_SEQ,
+		    genl_family_get_id(state->nl80211), 0,
 		    0, NL80211_CMD_DEL_INTERFACE, 0);
 	NLA_PUT_U32(msg, NL80211_ATTR_IFINDEX, ifindex);
 
-	err = nl_send_auto_complete(state->nl_sock, msg);
+	err = nl_send_sync(state->nl_sock, msg); // calls nlmsg_free()
 	if (err < 0) {
 		snprintf(handle->errbuf, PCAP_ERRBUF_SIZE,
-		    "%s: nl_send_auto_complete failed deleting %s interface: %s",
+		    "%s: nl_send_sync failed deleting %s interface: %s",
 		    device, mondevice, nl_geterror(-err));
-		nlmsg_free(msg);
-		return PCAP_ERROR;
-	}
-	err = nl_wait_for_ack(state->nl_sock);
-	if (err < 0) {
-		snprintf(handle->errbuf, PCAP_ERRBUF_SIZE,
-		    "%s: nl_wait_for_ack failed deleting %s interface: %s",
-		    device, mondevice, nl_geterror(-err));
-		nlmsg_free(msg);
 		return PCAP_ERROR;
 	}
 
 	/*
 	 * Success.
 	 */
-	nlmsg_free(msg);
 	return 1;
 
 nla_put_failure:
@@ -913,12 +917,12 @@ pcap_can_set_rfmon_linux(pcap_t *handle)
  * The author has found no straightforward way to check for support.
  */
 static long long int
-linux_get_stat(const char * if_name, const char * stat) {
+linux_get_stat(const char * if_name, const char * stat_name) {
 	ssize_t bytes_read;
 	int fd;
 	char buffer[PATH_MAX];
 
-	snprintf(buffer, sizeof(buffer), "/sys/class/net/%s/statistics/%s", if_name, stat);
+	snprintf(buffer, sizeof(buffer), "/sys/class/net/%s/statistics/%s", if_name, stat_name);
 	fd = open(buffer, O_RDONLY);
 	if (fd == -1)
 		return 0;
@@ -1387,19 +1391,17 @@ linux_check_direction(const pcap_t *handle, const struct sockaddr_ll *sll)
 			return 0;
 
 		/*
-		 * If this is an outgoing CAN or CAN FD frame, and
-		 * the user doesn't only want outgoing packets,
-		 * reject it; CAN devices and drivers, and the CAN
-		 * stack, always arrange to loop back transmitted
-		 * packets, so they also appear as incoming packets.
-		 * We don't want duplicate packets, and we can't
-		 * easily distinguish packets looped back by the CAN
-		 * layer than those received by the CAN layer, so we
-		 * eliminate this packet instead.
+		 * If this is an outgoing CAN frame, and the user doesn't
+		 * want only outgoing packets, reject it; CAN devices
+		 * and drivers, and the CAN stack, always arrange to
+		 * loop back transmitted packets, so they also appear
+		 * as incoming packets.  We don't want duplicate packets,
+		 * and we can't easily distinguish packets looped back
+		 * by the CAN layer than those received by the CAN layer,
+		 * so we eliminate this packet instead.
 		 *
-		 * We check whether this is a CAN or CAN FD frame
-		 * by checking whether the device's hardware type
-		 * is ARPHRD_CAN.
+		 * We check whether this is a CAN frame by checking whether
+		 * the device's hardware type is ARPHRD_CAN.
 		 */
 		if (sll->sll_hatype == ARPHRD_CAN &&
 		     handle->direction != PCAP_D_OUT)
@@ -2084,8 +2086,8 @@ static int map_arphrd_to_dlt(pcap_t *handle, int arptype,
 			if (ret == 1) {
 				/*
 				 * This is a DSA master/management network
-				 * device linktype is already set by
-				 * iface_dsa_get_proto_info() set an
+				 * device, linktype is already set by
+				 * iface_dsa_get_proto_info(), set an
 				 * appropriate offset here.
 				 */
 				handle->offset = 2;
@@ -2330,7 +2332,7 @@ static int map_arphrd_to_dlt(pcap_t *handle, int arptype,
 		 *
 		 *	https://github.com/mcr/libpcap/pull/29
 		 *
-		 * There doesn't seem to be any network drivers that uses
+		 * There don't seem to be any network drivers that use
 		 * any of the ARPHRD_FC* values for IP-over-FC, and
 		 * it's not exactly clear what the "Dummy types for non
 		 * ARP hardware" are supposed to mean (link-layer
@@ -2381,9 +2383,9 @@ static int map_arphrd_to_dlt(pcap_t *handle, int arptype,
 		handle->linktype = DLT_RAW;
 		break;
 
-       case ARPHRD_IEEE802154:
-               handle->linktype =  DLT_IEEE802_15_4_NOFCS;
-               break;
+	case ARPHRD_IEEE802154:
+		handle->linktype = DLT_IEEE802_15_4_NOFCS;
+		break;
 
 	case ARPHRD_NETLINK:
 		handle->linktype = DLT_NETLINK;
@@ -2423,10 +2425,6 @@ setup_socket(pcap_t *handle, int is_any_device)
 	int			val;
 	int			err = 0;
 	struct packet_mreq	mr;
-#if defined(SO_BPF_EXTENSIONS) && defined(SKF_AD_VLAN_TAG_PRESENT)
-	int			bpf_extensions;
-	socklen_t		len = sizeof(bpf_extensions);
-#endif
 
 	/*
 	 * Open a socket with protocol family packet. If cooked is true,
@@ -2466,9 +2464,9 @@ setup_socket(pcap_t *handle, int is_any_device)
 			 * Other error.
 			 */
 			status = PCAP_ERROR;
+			pcapint_fmt_errmsg_for_errno(handle->errbuf,
+			    PCAP_ERRBUF_SIZE, errno, "socket");
 		}
-		pcapint_fmt_errmsg_for_errno(handle->errbuf, PCAP_ERRBUF_SIZE,
-		    errno, "socket");
 		return status;
 	}
 
@@ -2656,6 +2654,7 @@ setup_socket(pcap_t *handle, int is_any_device)
 		if (handle->dlt_list == NULL) {
 			pcapint_fmt_errmsg_for_errno(handle->errbuf,
 			    PCAP_ERRBUF_SIZE, errno, "malloc");
+			close(sock_fd);
 			return (PCAP_ERROR);
 		}
 		handle->dlt_list[0] = DLT_LINUX_SLL;
@@ -2762,12 +2761,29 @@ setup_socket(pcap_t *handle, int is_any_device)
 	 */
 	handle->fd = sock_fd;
 
-#if defined(SO_BPF_EXTENSIONS) && defined(SKF_AD_VLAN_TAG_PRESENT)
+	/*
+	 * Any supported Linux version implements at least four auxiliary
+	 * data items (SKF_AD_PROTOCOL, SKF_AD_PKTTYPE, SKF_AD_IFINDEX and
+	 * SKF_AD_NLATTR).  Set a flag so the code generator can use these
+	 * items if necessary.
+	 */
+	handle->bpf_codegen_flags |= BPF_SPECIAL_BASIC_HANDLING;
+
 	/*
 	 * Can we generate special code for VLAN checks?
 	 * (XXX - what if we need the special code but it's not supported
 	 * by the OS?  Is that possible?)
+	 *
+	 * This depends on both a runtime condition (the running Linux kernel
+	 * must support at least SKF_AD_VLAN_TAG_PRESENT in the auxiliary data
+	 * and must support SO_BPF_EXTENSIONS in order to tell the userland
+	 * process what it supports) and a compile-time condition (the OS
+	 * headers must define both constants in order to compile libpcap code
+	 * that asks the kernel about the support).
 	 */
+#if defined(SO_BPF_EXTENSIONS) && defined(SKF_AD_VLAN_TAG_PRESENT)
+	int bpf_extensions;
+	socklen_t len = sizeof(bpf_extensions);
 	if (getsockopt(sock_fd, SOL_SOCKET, SO_BPF_EXTENSIONS,
 	    &bpf_extensions, &len) == 0) {
 		if (bpf_extensions >= SKF_AD_VLAN_TAG_PRESENT) {
@@ -2777,7 +2793,7 @@ setup_socket(pcap_t *handle, int is_any_device)
 			handle->bpf_codegen_flags |= BPF_SPECIAL_VLAN_HANDLING;
 		}
 	}
-#endif /* defined(SO_BPF_EXTENSIONS) && defined(SKF_AD_VLAN_TAG_PRESENT) */
+#endif // defined(SO_BPF_EXTENSIONS) && defined(SKF_AD_VLAN_TAG_PRESENT)
 
 	return status;
 }
@@ -2990,8 +3006,6 @@ prepare_tpacket_socket(pcap_t *handle)
 	return -1;
 }
 
-#define MAX(a,b) ((a)>(b)?(a):(b))
-
 /*
  * Attempt to set up memory-mapped access.
  *
@@ -3111,7 +3125,7 @@ create_ring(pcap_t *handle)
 			if (offload == -1)
 				return PCAP_ERROR;
 			if (offload)
-				max_frame_len = MAX(mtu, 65535);
+				max_frame_len = max(mtu, 65535);
 			else
 				max_frame_len = mtu;
 			max_frame_len += 18;
@@ -3549,11 +3563,9 @@ pcap_get_ring_frame_status(pcap_t *handle, u_int offset)
 	switch (handlep->tp_version) {
 	case TPACKET_V2:
 		return __atomic_load_n(&h.h2->tp_status, __ATOMIC_ACQUIRE);
-		break;
 #ifdef HAVE_TPACKET3
 	case TPACKET_V3:
 		return __atomic_load_n(&h.h3->hdr.bh1.block_status, __ATOMIC_ACQUIRE);
-		break;
 #endif
 	}
 	/* This should not happen. */
@@ -4136,17 +4148,17 @@ static int pcap_handle_packet_mmap(
 
 			/*
 			 * Put multi-byte header fields in a byte-order
-			 *-independent format.
+			 * -independent format.
 			 */
 			if (canxl_hdr->flags & CANXL_XLF) {
 				/*
 				 * This is a CAN XL frame.
 				 *
 				 * DLT_CAN_SOCKETCAN is specified as having
-				 * the Priority ID/VCID field in big--
+				 * the Priority ID/VCID field in big-
 				 * endian byte order, and the payload length
 				 * and Acceptance Field in little-endian byte
-				 * order. but capturing on a CAN device
+				 * order, but capturing on a CAN device
 				 * provides them in host byte order.
 				 * Convert them to the appropriate byte
 				 * orders.
@@ -4161,7 +4173,7 @@ static int pcap_handle_packet_mmap(
 				 * headers, and treats that field as
 				 * being big-endian.
 				 *
-				 * The other fields are put in little-
+				 * The reason other fields are put in little-
 				 * endian byte order is that older
 				 * libpcap code, ignorant of CAN XL,
 				 * left those fields alone, and the
@@ -4934,15 +4946,15 @@ enter_rfmon_mode(pcap_t *handle, int sock_fd, const char *device)
 		nl80211_cleanup(&nlstate);
 		return ret;
 	}
-        if (type == NL80211_IFTYPE_MONITOR) {
+	if (type == NL80211_IFTYPE_MONITOR) {
 		/*
 		 * OK, it's already a monitor mode device; just use it.
 		 * There's no point in creating another monitor device
 		 * that will have to be cleaned up.
 		 */
-                nl80211_cleanup(&nlstate);
-                return ret;
-        }
+		nl80211_cleanup(&nlstate);
+		return ret;
+	}
 
 	/*
 	 * OK, it's apparently a mac80211 device but not a monitor device.
@@ -5394,23 +5406,299 @@ iface_get_offload(pcap_t *handle _U_)
 }
 #endif /* SIOCETHTOOL */
 
+/*
+ * As per
+ *
+ *    https://www.kernel.org/doc/html/latest/networking/dsa/dsa.html#switch-tagging-protocols
+ *
+ * Type 1 means that the tag is prepended to the Ethernet packet.
+ * LINKTYPE_ETHERNET/DLT_EN10MB doesn't work, as it would try to
+ * dissect the tag data as the Ethernet header.  These should get
+ * their own LINKTYPE_DLT_ values.
+ *
+ * Type 2 means that the tag is inserted into the Ethernet header
+ * after the source address and before the type/length field.
+ *
+ * Type 3 means that tag is a packet trailer.  LINKTYPE_ETHERNET/DLT_EN10MB
+ * works,  unless the next-layer protocol has no length field of its own,
+ * so that the tag might be treated as part of the payload. These should
+ * get their own LINKTYPE_/DLT_ values.
+ *
+ * If you get an "unsupported DSA tag" error, please add the tag to here,
+ * complete with a full comment indicating whether it's type 1, 2, or 3,
+ * and, for type 2, indicating whether it has an Ethertype and, if so
+ * what that type is, and whether it's registered with the IEEE or is
+ * self-assigned. Also, point to *something* that indicates the format
+ * of the tag.
+ */
 static struct dsa_proto {
 	const char *name;
 	bpf_u_int32 linktype;
 } dsa_protos[] = {
 	/*
-	 * None is special and indicates that the interface does not have
+	 * Type 1. See
+	 *
+	 *    https://elixir.bootlin.com/linux/v6.13.2/source/net/dsa/tag_ar9331.c
+	 */
+	{ "ar9331", DLT_EN10MB },
+
+	/*
+	 * Type 2, without an EtherType at the beginning,
+	 * assigned a LINKTYPE_/DLT_ value.
+	 */
+	{ "brcm", DLT_DSA_TAG_BRCM },
+
+	/*
+	 * Type 2, with EtherType 0x8874, assigned to Broadcom.
+	 *
+	 * This does not require a LINKTYPE_/DLT_ value, it
+	 * just requires that Ethertype 0x8874 be dissected
+	 * properly.
+	 */
+	{ "brcm-legacy", DLT_EN10MB },
+
+	/*
+	 * Type 1.
+	 */
+	{ "brcm-prepend", DLT_DSA_TAG_BRCM_PREPEND },
+
+	/*
+	 * Type 2, without an EtherType at the beginning,
+	 * assigned a LINKTYPE_/DLT_ value.
+	 */
+	{ "dsa", DLT_DSA_TAG_DSA },
+
+	/*
+	 * Type 2, with an Ethertype field, but without
+	 * an assigned EtherType value that can be relied
+	 * on; assigned a LINKTYPE_/DLT_ value.
+	 */
+	{ "edsa", DLT_DSA_TAG_EDSA },
+
+	/*
+	 * Type 1, with different transmit and receive headers,
+	 * so can't really be handled well with the current
+	 * libpcap API and with pcap files.  Use DLT_LINUX_SLL,
+	 * to get the direction?
+	 *
+	 * See
+	 *
+	 *    https://elixir.bootlin.com/linux/v6.13.2/source/net/dsa/tag_gswip.c
+	 */
+	{ "gswip", DLT_EN10MB },
+
+	/*
+	 * Type 3. See
+	 *
+	 *    https://elixir.bootlin.com/linux/v6.13.2/source/net/dsa/tag_hellcreek.c
+	 */
+	{ "hellcreek", DLT_EN10MB },
+
+	/*
+	 * Type 3, with different transmit and receive headers,
+	 * so can't really be handled well with the current
+	 * libpcap API and with pcap files.  Use DLT_LINUX_SLL,
+	 * to get the direction?
+	 *
+	 * See
+	 *
+	 *    https://elixir.bootlin.com/linux/v6.13.2/source/net/dsa/tag_ksz.c#L102
+	 */
+	{ "ksz8795", DLT_EN10MB },
+
+	/*
+	 * Type 3, with different transmit and receive headers,
+	 * so can't really be handled well with the current
+	 * libpcap API and with pcap files.  Use DLT_LINUX_SLL,
+	 * to get the direction?
+	 *
+	 * See
+	 *
+	 *    https://elixir.bootlin.com/linux/v6.13.2/source/net/dsa/tag_ksz.c#L160
+	 */
+	{ "ksz9477", DLT_EN10MB },
+
+	/*
+	 * Type 3, with different transmit and receive headers,
+	 * so can't really be handled well with the current
+	 * libpcap API and with pcap files.  Use DLT_LINUX_SLL,
+	 * to get the direction?
+	 *
+	 * See
+	 *
+	 *    https://elixir.bootlin.com/linux/v6.13.2/source/net/dsa/tag_ksz.c#L341
+	 */
+	{ "ksz9893", DLT_EN10MB },
+
+	/*
+	 * Type 3, with different transmit and receive headers,
+	 * so can't really be handled well with the current
+	 * libpcap API and with pcap files.  Use DLT_LINUX_SLL,
+	 * to get the direction?
+	 *
+	 * See
+	 *
+	 *    https://elixir.bootlin.com/linux/v6.13.2/source/net/dsa/tag_ksz.c#L386
+	 */
+	{ "lan937x", DLT_EN10MB },
+
+	/*
+	 * Type 2, with EtherType 0x8100; the VID can be interpreted
+	 * as per
+	 *
+	 *    https://elixir.bootlin.com/linux/v6.13.2/source/net/dsa/tag_lan9303.c#L24
+	 *
+	 * so giving its own LINKTYPE_/DLT_ value would allow a
+	 * dissector to do so.
+	 */
+	{ "lan9303", DLT_EN10MB },
+
+	/*
+	 * Type 2, without an EtherType at the beginning,
+	 * should be assigned a LINKTYPE_/DLT_ value.
+	 *
+	 * See
+	 *
+	 *    https://elixir.bootlin.com/linux/v6.13.2/source/net/dsa/tag_mtk.c#L15
+	 */
+	{ "mtk", DLT_EN10MB },
+
+	/*
+	 * The string "none" indicates that the interface does not have
 	 * any tagging protocol configured, and is therefore a standard
 	 * Ethernet interface.
 	 */
 	{ "none", DLT_EN10MB },
-	{ "brcm", DLT_DSA_TAG_BRCM },
-	{ "brcm-prepend", DLT_DSA_TAG_BRCM_PREPEND },
-	{ "dsa", DLT_DSA_TAG_DSA },
-	{ "edsa", DLT_DSA_TAG_EDSA },
+
+	/*
+	 * Type 1.
+	 *
+	 * See
+	 *
+	 *    https://elixir.bootlin.com/linux/v6.13.2/source/net/dsa/tag_ocelot.c
+	 */
+	{ "ocelot", DLT_EN10MB },
+
+	/*
+	 * Type 1.
+	 *
+	 * See
+	 *
+	 *    https://elixir.bootlin.com/linux/v6.13.2/source/net/dsa/tag_ocelot.c
+	 */
+	{ "seville", DLT_EN10MB },
+
+	/*
+	 * Type 2, with EtherType 0x8100; the VID can be interpreted
+	 * as per
+	 *
+	 *    https://elixir.bootlin.com/linux/v6.13.2/source/net/dsa/tag_8021q.c#L15
+	 *
+	 * so giving its own LINKTYPE_/DLT_ value would allow a
+	 * dissector to do so.
+	 */
+	{ "ocelot-8021q", DLT_EN10MB },
+
+	/*
+	 * Type 2, without an EtherType at the beginning,
+	 * should be assigned a LINKTYPE_/DLT_ value.
+	 *
+	 * See
+	 *
+	 *    https://elixir.bootlin.com/linux/v6.13.2/source/net/dsa/tag_qca.c
+	 */
+	{ "qca", DLT_EN10MB },
+
+	/*
+	 * Type 2, with EtherType 0x8899, assigned to Realtek;
+	 * they use it for several on-the-Ethernet protocols
+	 * as well, but there are fields that allow the two
+	 * tag formats, and all the protocols in question,
+	 * to be distinguiished from one another.
+	 *
+	 * This does not require a LINKTYPE_/DLT_ value, it
+	 * just requires that EtherType 0x8899 be dissected
+	 * properly.
+	 *
+	 * See
+	 *
+	 *    https://elixir.bootlin.com/linux/v6.13.2/source/net/dsa/tag_rtl4_a.c
+	 *
+	 *    http://realtek.info/pdf/rtl8306sd%28m%29_datasheet_1.1.pdf
+	 *
+	 * and various pages in tcpdump's print-realtek.c and Wireshark's
+	 * epan/dissectors/packet-realtek.c for the other protocols.
+	 */
 	{ "rtl4a", DLT_EN10MB },
+
+	/*
+	 * Type 2, with EtherType 0x8899, assigned to Realtek;
+	 * see above.
+	 */
 	{ "rtl8_4", DLT_EN10MB },
+
+	/*
+	 * Type 3, with the same tag format as rtl8_4.
+	 */
 	{ "rtl8_4t", DLT_EN10MB },
+
+	/*
+	 * Type 2, with EtherType 0xe001; that's probably
+	 * self-assigned, so this really should have its
+	 * own LINKTYPE_/DLT_ value.
+	 *
+	 * See
+	 *
+	 *    https://elixir.bootlin.com/linux/v6.13.2/source/net/dsa/tag_rzn1_a5psw.c
+	 */
+	{ "a5psw", DLT_EN10MB },
+
+	/*
+	 * Type 2, with EtherType 0x8100 or the self-assigned
+	 * 0xdadb, so this really should have its own
+	 * LINKTYPE_/DLT_ value; that would also allow the
+	 * VID of the tag to be dissected as per
+	 *
+	 *    https://elixir.bootlin.com/linux/v6.13.2/source/net/dsa/tag_8021q.c#L15
+	 */
+	{ "sja1105", DLT_EN10MB },
+
+	/*
+	 * Type "none of the above", with both a header and trailer,
+	 * with different transmit and receive tags.  Has
+	 * EtherType 0xdadc, which is probably self-assigned.
+	 * This should really have its own LINKTYPE_/DLT_ value.
+	 */
+	{ "sja1110", DLT_EN10MB },
+
+	/*
+	 * Type 3, as the name suggests.
+	 *
+	 * See
+	 *
+	 *    https://elixir.bootlin.com/linux/v6.13.2/source/net/dsa/tag_trailer.c
+	 */
+	{ "trailer", DLT_EN10MB },
+
+	/*
+	 * Type 2, with EtherType 0x8100; the VID can be interpreted
+	 * as per
+	 *
+	 *    https://elixir.bootlin.com/linux/v6.13.2/source/net/dsa/tag_8021q.c#L15
+	 *
+	 * so giving its own LINKTYPE_/DLT_ value would allow a
+	 * dissector to do so.
+	 */
+	{ "vsc73xx-8021q", DLT_EN10MB },
+
+	/*
+	 * Type 3.
+	 *
+	 * See
+	 *
+	 *    https://elixir.bootlin.com/linux/v6.13.2/source/net/dsa/tag_xrs700x.c
+	 */
+	{ "xrs700x", DLT_EN10MB },
 };
 
 static int
@@ -5535,13 +5823,69 @@ iface_get_arptype(int fd, const char *device, char *ebuf)
 	return ifr.ifr_hwaddr.sa_family;
 }
 
+/*
+ * In a DLT_CAN_SOCKETCAN frame the first four bytes are a 32-bit integer
+ * value in host byte order if the filter program is running in the kernel and
+ * in network byte order if in userland.  This applies to both CC, FD and XL
+ * frames, see pcap_handle_packet_mmap() for the rationale.  Return 1 iff the
+ * [possibly modified] filter program can work correctly in the kernel.
+ */
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+static int
+fix_dlt_can_socketcan(const u_int len, struct bpf_insn insn[])
+{
+	for (u_int i = 0; i < len; ++i) {
+		switch (insn[i].code) {
+		case BPF_LD|BPF_B|BPF_ABS: // ldb [k]
+		case BPF_LDX|BPF_MSH|BPF_B: // ldxb 4*([k]&0xf)
+			if (insn[i].k < 4)
+				insn[i].k = 3 - insn[i].k; // Fixed now.
+			break;
+		case BPF_LD|BPF_H|BPF_ABS: // ldh [k]
+		case BPF_LD|BPF_W|BPF_ABS: // ld [k]
+			/*
+			 * A halfword or a word load cannot be fixed by just
+			 * changing k, even if every required byte is within
+			 * the byte-swapped part of the frame, even if the
+			 * load is aligned.  The fix would require either
+			 * rewriting the filter program extensively or
+			 * generating it differently in the first place.
+			 */
+		case BPF_LD|BPF_B|BPF_IND: // ldb [x + k]
+		case BPF_LD|BPF_H|BPF_IND: // ldh [x + k]
+		case BPF_LD|BPF_W|BPF_IND: // ld [x + k]
+			/*
+			 * In addition to the above, a variable offset load
+			 * cannot be fixed because x can have any value, thus
+			 * x + k can have any value, but only the first four
+			 * bytes are swapped.  An easy way to demonstrate it
+			 * is to compile "link[link[4]] == 0", which will use
+			 * "ldb [x + 0]" to access one of the first four bytes
+			 * of the frame iff CAN CC/FD payload length is less
+			 * than 4.
+			 */
+			if (insn[i].k < 4)
+				return 0; // Userland filtering only.
+			break;
+		}
+	}
+	return 1;
+}
+#else
+static int
+fix_dlt_can_socketcan(const u_int len _U_, struct bpf_insn insn[] _U_)
+{
+	return 1;
+}
+#endif // __BYTE_ORDER == __LITTLE_ENDIAN
+
 static int
 fix_program(pcap_t *handle, struct sock_fprog *fcode)
 {
 	struct pcap_linux *handlep = handle->priv;
 	size_t prog_size;
-	register int i;
-	register struct bpf_insn *p;
+	int i;
+	struct bpf_insn *p;
 	struct bpf_insn *f;
 	int len;
 
@@ -5560,6 +5904,17 @@ fix_program(pcap_t *handle, struct sock_fprog *fcode)
 	memcpy(f, handle->fcode.bf_insns, prog_size);
 	fcode->len = len;
 	fcode->filter = (struct sock_filter *) f;
+
+	switch (handle->linktype) {
+	case DLT_CAN_SOCKETCAN:
+		/*
+		 * If a similar fix needs to be done for CAN frames that
+		 * appear on the "any" pseudo-interface, it needs to be done
+		 * differently because that would be within DLT_LINUX_SLL or
+		 * DLT_LINUX_SLL2.
+		 */
+		return fix_dlt_can_socketcan(len, f);
+	}
 
 	for (i = 0; i < len; ++i) {
 		p = &f[i];
@@ -5854,12 +6209,18 @@ pcap_set_protocol_linux(pcap_t *p, int protocol)
 /*
  * Libpcap version string.
  */
+#if defined(HAVE_TPACKET3) && defined(PCAP_SUPPORT_NETMAP)
+  #define ADDITIONAL_INFO_STRING	"with TPACKET_V3 and netmap"
+#elif defined(HAVE_TPACKET3)
+  #define ADDITIONAL_INFO_STRING	"with TPACKET_V3"
+#elif defined(PCAP_SUPPORT_NETMAP)
+  #define ADDITIONAL_INFO_STRING	"with TPACKET_V2 and netmap"
+#else
+  #define ADDITIONAL_INFO_STRING	"with TPACKET_V2"
+#endif
+
 const char *
 pcap_lib_version(void)
 {
-#if defined(HAVE_TPACKET3)
-	return (PCAP_VERSION_STRING " (with TPACKET_V3)");
-#else
-	return (PCAP_VERSION_STRING " (with TPACKET_V2)");
-#endif
+	return (PCAP_VERSION_STRING_WITH_ADDITIONAL_INFO(ADDITIONAL_INFO_STRING));
 }

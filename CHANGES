@@ -17,6 +17,7 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       Remove outdated code related to AirPcap HW.
         The Riverbed AirPcap Product has reached End of Availability
         (EOA) as of December 31, 2017
+      Make pcap_compile() error messages more uniform and consistent.
     Link-layer types:
       Add LINKTYPE_ETW/DLT_ETW.
       Add LINKTYPE_NETANALYZER_NG/DLT_NETANALYZER_NG (pull request
@@ -42,12 +43,35 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
         request #1273).
       Eliminate trailing space in bpf_image() result.
       Fix DECnet packet filtering on big-endian hosts.
+      Fix various failures to reject invalid DECnet primitives.
+      Require "vpi" and "vci" values to be within valid ranges.
+      Initialize the scratch memory store to 0.
+      Require "[wlan] dir" integer value to be within range.
+      Fix the != comparison for ATM and MTP field values.
+      Deprecate bpf_filter().
+      Require a live capture for all Linux BPF extensions.
+      Have "outbound" mean Tx only for DLT_SLIP.
+      Filter Linux SocketCAN frames in userland if necessary.
+      Enable "[wlan] dir/type/subtype" for DLT_PPI.
+      Require "(iso|isis) proto" values to be within valid ranges.
+      Use the correct IS-IS PDU type offset for DLT_C_HDLC.
+      Use the correct bit mask for IS-IS PDU type value.
+      Fix the "|" and "&" operators of the "byte" primitive.
+      Require "byte" argument value to be within range.
+      Require "link proto" argument value to be within range.
+      Require "(ip|ip6) proto" value to be within range.
+      Require "protochain" value to be within range.
+      Always enable the "gateway" primitive.
+      Properly reject "link proto" for DLT_BACNET_MS_TP.
+      Extend "link (host|broadcast)" support onto DLT_BACNET_MS_TP.
+      Do not try matching RFC 1051 system codes for ARCnet.
     rpcap:
       Support user names and passwords in rpcap:// and rpcaps:// URLs.
       Add a -t flag to rpcapd to specify the data channel port; from
         another incorporate-remote-capture project. (issue #1120)
       rpcapd: Refine SSL options in printusage().
       Fix a possible buffer overflow (Coverity CID 1619148).
+      Fix parameter name validation in the configuration file.
     Documentation:
       Document a standard format for writing out BPF filter programs.
       Add a README.hurd.md file.
@@ -55,7 +79,11 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       Cross-reference some man pages better.
       Actualize README.dag and make it Markdown.
       Add a README.snf.md file.
-      pcap-filter(7): Clarify Ethernet, IPv4 and IPv6.
+      pcap-filter(7): Make a number of assorted improvements.
+      pcap_lib_version(3PCAP): Add details and examples.
+      Discuss Linux BPF extensions in the man pages.
+      Note endianness in pcap_compile(3PCAP) and pcap_lookupnet(3PCAP).
+      man: Document devices, interfaces and "any" better.
     Building and testing:
       Apply GNU Hurd support patch from the Debian package.
       CI: Introduce and use LIBPCAP_CMAKE_TAINTED.
@@ -82,6 +110,11 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       CI: Implement "make check".
       Fix autotools and CMake issues with snprintf test and sanitizers.
         Fixes issue #1396.
+      filtertest: Add "-l" flag to use Linux BPF extensions.
+      filtertest: Use ntohl() on the netmask to fix the -m option.
+      filtertest: Add support for stdin as "-" to the -F option.
+      Rename CMake option to ENABLE_PROTOCHAIN to match Autoconf.
+      Remove the "disable IPv6" build option.
     Hurd:
       Support network capture devices too.
       Fix a few device activation bugs.
@@ -89,6 +122,11 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       Add kernel filtering, fix userland filtering.
     OpenBSD:
       Use getprotobyname_r() correctly on OpenBSD.
+    Linux:
+      Do not use ether_hostton() from musl libc.
+      Fix propagation of getprotobyname_r() errors.
+    Haiku:
+      Look for ethers(5) in /boot/system/settings/network/.
     DAG:
       Always set PCAP_IF_CONNECTION_STATUS_NOT_APPLICABLE.
       In dag_findalldevs() handle known errors better.
@@ -112,17 +150,57 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
 
 DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
   Summary for 1.10.6 libpcap release (so far!)
-    Source code:
+    General:
       Fix "tcpdump -i <n>" for something-only libpcap builds.
+      gencode: Fix an undefined behavior in gen_mcode().
+      gencode: Add a missing free() in gen_scode().
+      Remove "DLT_" from the descriptions of two dlt_choices[] entries.
+      Report the size of time_t in the version string.
+    Source code:
       Remove some unneeded includes.
       pcapint_find_function() changed to return "void *" to avoid
         warnings.
+      Clean up code that computes the length of a netmask.
+      Mind netmap support in pcap_lib_version().
     Packet filtering:
       Make the chunk allocator's alignment more general and
         platform-independent.
+      IEEE 802.11: Fix three undefined behaviors in grammar.y.
+      Fix IPv4 multicast filtering to only include 224.0.0.0/4.
+      Fix "(arp|rarp) host NAME" to ignore IPv6 quietly.
     Linux:
       Fix check for mac80211 phydev.
       Don't create monitor-mode interface if we're capturing on one.
+      Expand the table of DSA tag types to include all current types.
+      Fix an error message when deleting a monN interface.
+      Fix returning PCAP_ERROR_RFMON_NOTSUP with libnl.
+      Fix the error message when capure permission is denied.
+      Fix the error message if PF_PACKET sockets aren't supported.
+      Fix a file descriptor leak in an error case (pull request #1537).
+    FreeBSD:
+      Fix detection and enablng of zero-copy supporrt.
+      Fix errors in the zero-copy code.
+    Solaris:
+      Fix not to ignore logical interfaces in fad-gifc.c and
+        fad-glifc.c.
+      Fix attempts to open all-numeric device names with DLPI to
+        return "no such device".
+      Fix error returns and messages when an interface has no DLPI
+        device.
+      Return all interfaces in pcap_findalldevs() even if they can't be
+        opened.
+    HP-UX:
+      Fix attempts to open all-numeric device names to return
+        "no such device".
+      Fix error message if there's no /dev/dlpi device.
+      Return all interfaces in pcap_findalldevs() even if they can't be
+        opened.
+    Windows:
+      Fix filtering for VLAN-tagged frames.
+      Add support for Npcap's nanosecond-resolution time stamps in
+        captures.
+      Fix a bug in error message character encoding mapping from UTF-16
+        to UTF-8.
     D-Bus:
       Fix message leak.
     Capture file writing:
@@ -136,11 +214,15 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       CMake: Fix build with CMake 3.31.
       CI: Report CMake version in builds.
       CI: Visual Studio 2022 builds added, including ARM64 builds;
-        Visual Studio 2015 bilds dropped.
+        Visual Studio 2015 builds dropped.
       Don't build with sslutils.c if we don't have a TLS library.
       Build on Windows with a newer version of OpenSSL.
       CMake: generalize handling of non-x86 Windows architectures.
       CI: use the -A flag for all Visual Studio generators.
+      Remove the fuzzing props from the release tarball.
+      Autoconf: Use AC_SYS_YEAR2038_RECOMMENDED when possible if the
+        environment variable BUILD_YEAR2038 = yes (via autogen.sh)
+      DPDK: don't enable it by default.
 
 Friday, August 30, 2024 / The Tcpdump Group
   Summary for 1.10.5 libpcap release

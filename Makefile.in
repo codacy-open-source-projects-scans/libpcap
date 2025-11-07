@@ -67,6 +67,7 @@ PROG=libpcap
 PTHREAD_LIBS=@PTHREAD_LIBS@
 BUILD_RPCAPD=@BUILD_RPCAPD@
 INSTALL_RPCAPD=@INSTALL_RPCAPD@
+PERL?=perl
 
 # Standard CFLAGS for building members of a shared library
 FULL_CFLAGS = $(CCOPT) @V_LIB_CCOPT_FAT@ $(SHLIB_CCOPT) $(INCLS) $(DEFS) $(CFLAGS)
@@ -350,20 +351,16 @@ EXTRA_DIST = \
 	scanner.l \
 	testprogs/CMakeLists.txt \
 	testprogs/Makefile.in \
+	testprogs/TESTrun \
+	testprogs/TESTlib.pm \
+	testprogs/TESTmt.pm \
+	testprogs/TESTst.pm \
 	testprogs/activatetest.c \
 	testprogs/can_set_rfmon_test.c \
 	testprogs/capturetest.c \
 	testprogs/filtertest.c \
 	testprogs/findalldevstest.c \
 	testprogs/findalldevstest-perf.c \
-	testprogs/fuzz/CMakeLists.txt \
-	testprogs/fuzz/fuzz_both.c \
-	testprogs/fuzz/fuzz_both.options \
-	testprogs/fuzz/fuzz_filter.c \
-	testprogs/fuzz/fuzz_filter.options \
-	testprogs/fuzz/fuzz_pcap.c \
-	testprogs/fuzz/fuzz_pcap.options \
-	testprogs/fuzz/onefile.c \
 	testprogs/nonblocktest.c \
 	testprogs/opentest.c \
 	testprogs/reactivatetest.c \
@@ -371,6 +368,7 @@ EXTRA_DIST = \
 	testprogs/threadsignaltest.c \
 	testprogs/unix.h \
 	testprogs/valgrindtest.c \
+	testprogs/versiontest.c \
 	testprogs/visopts.py \
 	testprogs/writecaptest.c
 
@@ -764,7 +762,7 @@ distclean: clean
 	(cd testprogs; $(MAKE) distclean)
 
 check: testprogs
-	$(srcdir)/testprogs/TESTrun
+	$(PERL) $(srcdir)/testprogs/TESTrun
 
 extags: $(TAGFILES)
 	ctags $(TAGFILES)
@@ -834,6 +832,8 @@ releasecheck: releasetar
 	./configure --enable-remote --quiet --prefix="$$INSTALL_DIR" && \
 	echo '[$@] $$ $(MAKE) -s all testprogs' && \
 	$(MAKE) -s all testprogs && \
+	echo '[$@] $$ $(MAKE) -s check' && \
+	$(MAKE) -s check >/dev/null && \
 	echo '[$@] $$ $(MAKE) -s install' && \
 	$(MAKE) -s install && \
 	cd .. && \
@@ -854,6 +854,8 @@ releasecheck: releasetar
 	    .. && \
 	echo '[$@] $$ $(MAKE) -s all testprogs' && \
 	$(MAKE) -s all testprogs && \
+	echo '[$@] $$ $(MAKE) -s check' && \
+	$(MAKE) -s check >/dev/null && \
 	echo '[$@] $$ $(MAKE) -s install' && \
 	$(MAKE) -s install && \
 	cd ../.. && \

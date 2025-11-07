@@ -23,6 +23,10 @@ To build libpcap with the configure script and `make`:
 run `./autogen.sh` (a shell script). The autogen.sh script will
 build the `configure` and `config.h.in` files.
 
+* If you build on a Linux 32-bit system, with Autoconf version >= 2.72
+and GNU C Library version >= 2.34, run `export BUILD_YEAR2038=yes`
+before running `./autogen.sh` to build with 64-bit time_t (Y2038-safe).
+
 On some system, you may need to set the `AUTORECONF` variable, like:
 `AUTORECONF=autoreconf-2.69 ./autogen.sh`
 to select the `autoreconf` version you want to use.
@@ -163,6 +167,10 @@ You can get around this by installing GCC.
 	fmtutils.c	    - error message formatting routines
 	fmtutils.h	    - error message formatting prototypes
 	ftmacros.h	    - feature test macros
+	testprogs/TESTrun   - a script for "make check"
+	testprogs/TESTlib.pm - TESTrun helper file
+	testprogs/TESTmt.pm - TESTrun helper file
+	testprogs/TESTst.pm - TESTrun helper file
 	testprogs/filtertest.c      - test program for BPF compiler
 	testprogs/findalldevstest.c - test program for pcap_findalldevs()
 	gencode.c	    - BPF code generation routines
@@ -255,4 +263,5 @@ You can get around this by installing GCC.
 	sockutils.h	    - socket and name lookup API prototypes
 	sslutils.c	    - OpenSSL interface routines
 	sslutils.h	    - OpenSSL interface prototypes
+	thread-local.h	    - header for some thread-safe support
 	varattrs.h	    - variable attribute macros

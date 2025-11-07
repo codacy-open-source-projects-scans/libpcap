@@ -1,11 +1,10 @@
 #!/bin/sh -e
 
-# This script runs one build with setup environment variables: CC, CMAKE, IPV6
-# and REMOTE.
+# This script runs one build with the setup environment variables below.
 : "${CC:=gcc}"
 : "${CMAKE:=no}"
-: "${IPV6:=no}"
 : "${REMOTE:=no}"
+: "${PROTOCHAIN:=yes}"
 : "${LIBPCAP_TAINTED:=no}"
 : "${LIBPCAP_CMAKE_TAINTED:=no}"
 : "${MAKE_BIN:=make}"
@@ -34,6 +33,57 @@ tcc-*/*)
     # thread-local storage.
     LIBPCAP_TAINTED=yes
     ;;
+clang-3.4/Linux-*)
+    # pcap-netfilter-linux.c:427:10: error: will never be executed
+    #   [-Werror,-Wunreachable-code]
+    # pcap.c:3812:4: error: will never be executed
+    #   [-Werror,-Wunreachable-code]
+    # scanner.l:662:3: warning: will never be executed [-Wunreachable-code]
+    # gencode.c:7061:3: warning: will never be executed [-Wunreachable-code]
+    LIBPCAP_TAINTED=yes
+    ;;
+suncc-5.14/SunOS-5.10|suncc-5.15/SunOS-5.10)
+    # (Sun C 5.15 on Solaris 11.4 does not generate any of these warnings.)
+    # "./gencode.c", line 599: warning: function "bpf_error" marked as not
+    #   returning, might return
+    # "optimize.c", line 2409: warning: function "opt_error" marked as not
+    #   returning, might return
+    # "optimize.c", line 2915: warning: function "conv_error" marked as not
+    #   returning, might return
+    # "./can_set_rfmon_test.c", line 95: warning: function "error" marked as
+    #   not returning, might return
+    # "./capturetest.c", line 314: warning: function "usage" marked as not
+    #   returning, might return
+    # "./capturetest.c", line 333: warning: function "error" marked as not
+    #   returning, might return
+    # "./filtertest.c", line 163: warning: function "error" marked as not
+    #   returning, might return
+    # "./filtertest.c", line 478: warning: function "usage" marked as not
+    #   returning, might return
+    # "./opentest.c", line 222: warning: function "usage" marked as not
+    #   returning, might return
+    # "./opentest.c", line 241: warning: function "error" marked as not
+    #   returning, might return
+    # "./nonblocktest.c", line 69: warning: function "error" marked as not
+    #   returning, might return
+    # "./nonblocktest.c", line 94: warning: function "usage" marked as not
+    #   returning, might return
+    # "./reactivatetest.c", line 89: warning: function "error" marked as not
+    #   returning, might return
+    # "./selpolltest.c", line 375: warning: function "usage" marked as not
+    #   returning, might return
+    # "./selpolltest.c", line 394: warning: function "error" marked as not
+    #   returning, might return
+    # "./threadsignaltest.c", line 339: warning: function "usage" marked as
+    #   not returning, might return
+    # "./threadsignaltest.c", line 358: warning: function "error" marked as
+    #   not returning, might return
+    # "./writecaptest.c", line 490: warning: function "usage" marked as not
+    #   returning, might return
+    # "./writecaptest.c", line 509: warning: function "error" marked as not
+    #   returning, might return
+    LIBPCAP_TAINTED=yes
+    ;;
 *)
     ;;
 esac
@@ -54,7 +104,7 @@ esac
 
 if [ "$CMAKE" = no ]; then
     run_after_echo ./autogen.sh
-    run_after_echo ./configure --prefix="$PREFIX" --enable-ipv6="$IPV6" --enable-remote="$REMOTE"
+    run_after_echo ./configure --prefix="$PREFIX" --enable-protochain="$PROTOCHAIN" --enable-remote="$REMOTE"
 else
     # Remove the leftovers from any earlier in-source builds, so this
     # out-of-source build does not break because of that.
@@ -68,7 +118,7 @@ else
     run_after_echo cmake --version
     run_after_echo cmake ${CFLAGS:+-DEXTRA_CFLAGS="$CFLAGS"} \
         ${CMAKE_OPTIONS:+"$CMAKE_OPTIONS"} \
-        -DCMAKE_INSTALL_PREFIX="$PREFIX" -DINET6="$IPV6" -DENABLE_REMOTE="$REMOTE" ..
+        -DCMAKE_INSTALL_PREFIX="$PREFIX" -DENABLE_PROTOCHAIN="$PROTOCHAIN" -DENABLE_REMOTE="$REMOTE" ..
 fi
 run_after_echo "$MAKE_BIN" -s clean
 if [ "$CMAKE" = no ]; then
@@ -91,22 +141,23 @@ run_after_echo "$PREFIX/bin/pcap-config" --additional-libs --static
 run_after_echo "$PREFIX/bin/pcap-config" --libs --static-pcap-only
 run_after_echo "$PREFIX/bin/pcap-config" --additional-libs --static-pcap-only
 
+[ "$REMOTE" = yes ] && print_so_deps "$PREFIX/sbin/rpcapd"
 [ "$REMOTE" = yes ] && run_after_echo "$PREFIX/sbin/rpcapd" -h
 
 # VALGRIND_CMD is meant either to collapse or to expand.
 # shellcheck disable=SC2086
 if [ "$CMAKE" = no ]; then
+    run_after_echo $VALGRIND_CMD testprogs/versiontest
     FILTERTEST_BIN="$VALGRIND_CMD testprogs/filtertest"
     export FILTERTEST_BIN
-    run_after_echo testprogs/TESTrun
+    run_after_echo "$MAKE_BIN" -s check
     run_after_echo $VALGRIND_CMD testprogs/findalldevstest
     [ "$TEST_RELEASETAR" = yes ] && run_after_echo "$MAKE_BIN" releasetar
 else
+    run_after_echo $VALGRIND_CMD run/versiontest
     FILTERTEST_BIN="$VALGRIND_CMD run/filtertest"
     export FILTERTEST_BIN
-    CONFIG_H='./config.h'
-    export CONFIG_H
-    run_after_echo ../testprogs/TESTrun
+    run_after_echo "$MAKE_BIN" -s check
     run_after_echo $VALGRIND_CMD run/findalldevstest
 fi
 handle_matrix_debug

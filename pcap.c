@@ -46,12 +46,17 @@
 #include <sys/file.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
-#ifdef HAVE_SYS_SOCKIO_H
+
+/*
+ * On most supported platforms <sys/ioctl.h> also defines the SIOCGIF* macros.
+ * However, on Haiku, illumos and Solaris the macros need <sys/sockio.h>,
+ * which does not exist in AIX 7, HP-UX 11, GNU/Hurd and Linux (both GNU and
+ * musl libc).
+ */
+#if defined(HAVE_SOLARIS) || defined(__HAIKU__)
 #include <sys/sockio.h>
 #endif
 
-struct mbuf;		/* Squelch compiler warnings on some platforms for */
-struct rtentry;		/* declarations in <net/if.h> */
 #include <net/if.h>
 #include <netinet/in.h>
 #endif /* _WIN32 */
@@ -1542,8 +1547,8 @@ int
 pcap_lookupnet(const char *device, bpf_u_int32 *netp, bpf_u_int32 *maskp,
     char *errbuf)
 {
-	register int fd;
-	register struct sockaddr_in *sin4;
+	int fd;
+	struct sockaddr_in *sin4;
 	struct ifreq ifr;
 
 	/*
@@ -2893,7 +2898,7 @@ pcap_dispatch(pcap_t *p, int cnt, pcap_handler callback, u_char *user)
 int
 pcap_loop(pcap_t *p, int cnt, pcap_handler callback, u_char *user)
 {
-	register int n;
+	int n;
 
 	for (;;) {
 		if (p->rfile != NULL) {
@@ -3135,7 +3140,7 @@ static const u_char charmap[] = {
 int
 pcapint_strcasecmp(const char *s1, const char *s2)
 {
-	register const u_char	*cm = charmap,
+	const u_char	*cm = charmap,
 				*us1 = (const u_char *)s1,
 				*us2 = (const u_char *)s2;
 
@@ -3157,11 +3162,16 @@ struct dlt_choice {
 static struct dlt_choice dlt_choices[] = {
 	DLT_CHOICE(NULL, "BSD loopback"),
 	DLT_CHOICE(EN10MB, "Ethernet"),
+	DLT_CHOICE(EN3MB, "experimental Ethernet (3Mb/s)"),
+	DLT_CHOICE(AX25, "AX.25 layer 2"),
+	DLT_CHOICE(PRONET, "Proteon ProNET Token Ring"),
+	DLT_CHOICE(CHAOS, "MIT Chaosnet"),
 	DLT_CHOICE(IEEE802, "Token ring"),
 	DLT_CHOICE(ARCNET, "BSD ARCNET"),
 	DLT_CHOICE(SLIP, "SLIP"),
 	DLT_CHOICE(PPP, "PPP"),
 	DLT_CHOICE(FDDI, "FDDI"),
+	DLT_CHOICE(REDBACK_SMARTEDGE, "Redback SmartEdge 400/800"),
 	DLT_CHOICE(ATM_RFC1483, "RFC 1483 LLC-encapsulated ATM"),
 	DLT_CHOICE(RAW, "Raw IP"),
 	DLT_CHOICE(SLIP_BSDOS, "BSD/OS SLIP"),
@@ -3277,7 +3287,7 @@ static struct dlt_choice dlt_choices[] = {
 	DLT_CHOICE(BLUETOOTH_BREDR_BB, "Bluetooth Basic Rate/Enhanced Data Rate baseband packets"),
 	DLT_CHOICE(BLUETOOTH_LE_LL_WITH_PHDR, "Bluetooth Low Energy air interface with pseudo-header"),
 	DLT_CHOICE(PROFIBUS_DL, "PROFIBUS data link layer"),
-	DLT_CHOICE(PKTAP, "Apple DLT_PKTAP"),
+	DLT_CHOICE(PKTAP, "Apple PKTAP"),
 	DLT_CHOICE(EPON, "Ethernet with 802.3 Clause 65 EPON preamble"),
 	DLT_CHOICE(IPMI_HPM_2, "IPMI trace packets"),
 	DLT_CHOICE(ZWAVE_R1_R2, "Z-Wave RF profile R1 and R2 packets"),
@@ -3286,7 +3296,7 @@ static struct dlt_choice dlt_choices[] = {
 	DLT_CHOICE(ISO_14443, "ISO 14443 messages"),
 	DLT_CHOICE(RDS, "IEC 62106 Radio Data System groups"),
 	DLT_CHOICE(USB_DARWIN, "USB with Darwin header"),
-	DLT_CHOICE(OPENFLOW, "OpenBSD DLT_OPENFLOW"),
+	DLT_CHOICE(OPENFLOW, "OpenBSD OpenFlow"),
 	DLT_CHOICE(SDLC, "IBM SDLC frames"),
 	DLT_CHOICE(TI_LLN_SNIFFER, "TI LLN sniffer frames"),
 	DLT_CHOICE(VSOCK, "Linux vsock"),
@@ -3319,6 +3329,22 @@ static struct dlt_choice dlt_choices[] = {
 	DLT_CHOICE(FIRA_UCI, "Ultra-wideband controller interface protocol"),
 	DLT_CHOICE(MDB, "Multi-Drop Bus"),
 	DLT_CHOICE(DECT_NR, "DECT New Radio"),
+	DLT_CHOICE(USER0, "Private use 0"),
+	DLT_CHOICE(USER1, "Private use 1"),
+	DLT_CHOICE(USER2, "Private use 2"),
+	DLT_CHOICE(USER3, "Private use 3"),
+	DLT_CHOICE(USER4, "Private use 4"),
+	DLT_CHOICE(USER5, "Private use 5"),
+	DLT_CHOICE(USER6, "Private use 6"),
+	DLT_CHOICE(USER7, "Private use 7"),
+	DLT_CHOICE(USER8, "Private use 8"),
+	DLT_CHOICE(USER9, "Private use 9"),
+	DLT_CHOICE(USER10, "Private use 10"),
+	DLT_CHOICE(USER11, "Private use 11"),
+	DLT_CHOICE(USER12, "Private use 12"),
+	DLT_CHOICE(USER13, "Private use 13"),
+	DLT_CHOICE(USER14, "Private use 14"),
+	DLT_CHOICE(USER15, "Private use 15"),
 	DLT_CHOICE_SENTINEL
 };
 
