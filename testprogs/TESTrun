@@ -6070,6 +6070,35 @@ my @accept_blocks = (
 			',
 	}, # rarp_host_addr_ipoieee1394
 
+	# gen_host() -> case Q_ARP
+	{
+		name => 'arp_host_addr_PFLOG',
+		DLT => 'PFLOG',
+		aliases => ['arp host 1.2.3.4'],
+		# The "opt" leg of this block is a reject test.
+		opt => undef,
+		unopt => '
+			(000) ld       #0x1
+			(001) jeq      #0x0             jt 2	jf 3
+			(002) ret      #262144
+			(003) ret      #0
+			',
+	}, # arp_host_addr_PFLOG
+	# gen_host() -> case Q_RARP
+	{
+		name => 'rarp_host_addr_PFLOG',
+		DLT => 'PFLOG',
+		aliases => ['rarp host 1.2.3.4'],
+		# The "opt" leg of this block is a reject test.
+		opt => undef,
+		unopt => '
+			(000) ld       #0x1
+			(001) jeq      #0x0             jt 2	jf 3
+			(002) ret      #262144
+			(003) ret      #0
+			',
+	}, # rarp_host_addr_PFLOG
+
 	{
 		name => 'arp_net_addr',
 		DLT => 'EN10MB',
@@ -18541,7 +18570,7 @@ sub errstr_invhost_ipv4 {
 
 # scanner.l
 sub errstr_invhost_ipv6 {
-	return sprintf ('bogus IPv6 address %s', shift);
+	return sprintf ('invalid IPv6 address %s', shift);
 }
 
 # ERRSTR_UNKNOWN_MAC48HOST
@@ -18561,7 +18590,7 @@ sub errstr_invlinkaddr {
 
 # gen_ecode()
 sub errstr_mac48_noether {
-	return 'ethernet address used in non-ether expression';
+	return 'Ethernet address used in non-ether expression';
 }
 
 # gen_ncode() case Q_PORT, case Q_PORTRANGE
@@ -18604,7 +18633,7 @@ my @reject_tests = (
 		name => 'ether_host',
 		DLT => 'EN10MB',
 		expr => 'ether ab:cd:ef:0g:00:00',
-		errstr => 'bogus ethernet address',
+		errstr => 'invalid Ethernet address',
 	},
 	{
 		name => 'pppoes_value',
@@ -19627,6 +19656,19 @@ my @reject_tests = (
 		DLT => 'IPV4',
 		# Idem.
 		expr => 'not ip and ip6',
+		errstr => errstr_rejects_all,
+	},
+
+	{
+		name => 'arp_host_addr_PFLOG',
+		DLT => 'PFLOG',
+		expr => 'arp host 1.2.3.4',
+		errstr => errstr_rejects_all,
+	},
+	{
+		name => 'rarp_host_addr_PFLOG',
+		DLT => 'PFLOG',
+		expr => 'rarp host 1.2.3.4',
 		errstr => errstr_rejects_all,
 	},
 );

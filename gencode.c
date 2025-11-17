@@ -622,6 +622,7 @@ static void *newchunk(compiler_state_t *cstate, size_t);
 static void freechunks(compiler_state_t *cstate);
 static inline struct block *new_block(compiler_state_t *cstate, int);
 static inline struct slist *new_stmt(compiler_state_t *cstate, int);
+static struct block *sprepend_to_block(struct slist *, struct block *);
 static struct block *gen_retblk(compiler_state_t *cstate, int);
 static inline void syntax(compiler_state_t *cstate);
 
@@ -657,7 +658,7 @@ static struct slist *gen_load_absoffsetrel(compiler_state_t *, bpf_abs_offset *,
 static struct slist *gen_load_a(compiler_state_t *, enum e_offrel, u_int,
     u_int);
 static struct slist *gen_loadx_iphdrlen(compiler_state_t *);
-static struct block *gen_uncond(compiler_state_t *, const u_char, struct slist *);
+static struct block *gen_uncond(compiler_state_t *, const u_char);
 static inline struct block *gen_true(compiler_state_t *);
 static inline struct block *gen_false(compiler_state_t *);
 static struct block *gen_ether_linktype(compiler_state_t *, bpf_u_int32);
@@ -1484,7 +1485,7 @@ gen_not(struct block *b)
 	if (b->meaning == IS_TRUE)
 		b->meaning = IS_FALSE;
 	else if (b->meaning == IS_FALSE)
-		b-> meaning = IS_TRUE;
+		b->meaning = IS_TRUE;
 	return b;
 }
 
@@ -2527,39 +2528,34 @@ gen_loadx_iphdrlen(compiler_state_t *cstate)
 }
 
 /*
- * Produce an instruction block with the given optional side effect statements
- * and a final branch statement that takes the true branch iff rsense is not
- * zero.  Since this function detects Boolean constants for potential later
- * use, the resulting block must not be modified directly afterwards, instead
- * it should be used as an argument to gen_and(), gen_or() and gen_not().
+ * Produce an instruction block with a final branch statement that takes the
+ * true branch iff rsense is not zero.  Since this function detects Boolean
+ * constants for potential later use, the resulting block must not be modified
+ * directly afterwards, instead it should be used as an argument to gen_and(),
+ * gen_or(), gen_not() and sprepend_to_block().
  */
 static struct block *
-gen_uncond(compiler_state_t *cstate, const u_char rsense, struct slist *stmts)
+gen_uncond(compiler_state_t *cstate, const u_char rsense)
 {
 	struct slist *s;
 
 	s = new_stmt(cstate, BPF_LD|BPF_IMM);
 	s->s.k = !rsense;
-	if (stmts) {
-		sappend(stmts, s);
-		s = stmts;
-	}
 	struct block *ret = gen_jmp_k(cstate, BPF_JEQ, 0, s);
-	if (! stmts)
-		ret->meaning = rsense ? IS_TRUE : IS_FALSE;
+	ret->meaning = rsense ? IS_TRUE : IS_FALSE;
 	return ret;
 }
 
 static inline struct block *
 gen_true(compiler_state_t *cstate)
 {
-	return gen_uncond(cstate, 1, NULL);
+	return gen_uncond(cstate, 1);
 }
 
 static inline struct block *
 gen_false(compiler_state_t *cstate)
 {
-	return gen_uncond(cstate, 0, NULL);
+	return gen_uncond(cstate, 0);
 }
 
 /*
@@ -3582,6 +3578,12 @@ insert_compute_vloffsets(compiler_state_t *cstate, struct block *b)
 	case DLT_IEEE802_11_RADIO:
 	case DLT_PPI:
 		s = gen_load_802_11_header_len(cstate, s, b->stmts);
+		/*
+		 * After this call s may have changed, b->stmts has not
+		 * changed, s and b->stmts have not merged into one linked
+		 * list, therefore the meaning of b, whether a Boolean constant
+		 * or not, has not changed.
+		 */
 		break;
 
 	case DLT_PFLOG:
@@ -3617,10 +3619,7 @@ insert_compute_vloffsets(compiler_state_t *cstate, struct block *b)
 	 * and make the resulting list the list of statements
 	 * for the block.
 	 */
-	if (s != NULL) {
-		sappend(s, b->stmts);
-		b->stmts = s;
-	}
+	sprepend_to_block(s, b);
 }
 
 /*
@@ -5166,11 +5165,30 @@ gen_host(compiler_state_t *cstate, bpf_u_int32 addr, bpf_u_int32 mask,
 
 	case Q_RARP:
 		b0 = gen_linktype(cstate, ETHERTYPE_REVARP);
+		/*
+		 * If this DLT does not support RARP, the result of
+		 * gen_linktype() is a Boolean false, then the subsequent
+		 * gen_and() would discard the result of gen_hostop() and
+		 * return the Boolean false.
+		 *
+		 * However, if this DLT also uses a variable-length link-layer
+		 * header (which means DLT_PFLOG only at the time of this
+		 * writing), a side effect of the gen_hostop() invocation
+		 * would be registering a demand for a variable-length offset
+		 * preamble, which a Boolean constant never needs, so in this
+		 * case return early and have one fewer reasons to produce the
+		 * preamble in insert_compute_vloffsets().
+		 */
+		if (b0->meaning == IS_FALSE)
+			return b0;
 		b1 = gen_hostop(cstate, addr, mask, dir, 14, 24);
 		return gen_and(b0, b1);
 
 	case Q_ARP:
 		b0 = gen_linktype(cstate, ETHERTYPE_ARP);
+		// same as for Q_RARP
+		if (b0->meaning == IS_FALSE)
+			return b0;
 		b1 = gen_hostop(cstate, addr, mask, dir, 14, 24);
 		return gen_and(b0, b1);
 
@@ -7182,7 +7200,7 @@ gen_ecode(compiler_state_t *cstate, const char *s, struct qual q)
 	const char *context = "link host XX:XX:XX:XX:XX:XX";
 
 	if (! ((q.addr == Q_HOST || q.addr == Q_DEFAULT) && q.proto == Q_LINK))
-		bpf_error(cstate, "ethernet address used in non-ether expression");
+		bpf_error(cstate, "Ethernet address used in non-ether expression");
 	if (! is_mac48_linktype(cstate->linktype))
 		fail_kw_on_dlt(cstate, context);
 
@@ -7234,6 +7252,27 @@ sappend(struct slist *s0, struct slist *s1)
 	while (s0->next)
 		s0 = s0->next;
 	s0->next = s1;
+}
+
+/*
+ * Prepend the given list of statements to the list of side effect statements
+ * of the block.  Either of the lists may be NULL to mean the valid edge case
+ * of an empty list.
+ */
+static struct block *
+sprepend_to_block(struct slist *s, struct block *b)
+{
+	if (s) {
+		if (b->stmts)
+			sappend(s, b->stmts);
+		b->stmts = s;
+		/*
+		 * The block has changed.  It could have been a Boolean
+		 * constant before.
+		 */
+		b->meaning = IS_UNCERTAIN;
+	}
+	return b;
 }
 
 static struct slist *
@@ -8507,8 +8546,7 @@ gen_vlan_patch_tpid_test(compiler_state_t *cstate, struct block *b_tpid)
 	gen_vlan_vloffset_add(cstate, &cstate->off_linktype, 4, &s);
 
 	/* we get a pointer to a chain of or-ed blocks, patch first of them */
-	sappend(s.next, b_tpid->head->stmts);
-	b_tpid->head->stmts = s.next;
+	sprepend_to_block(s.next, b_tpid->head);
 }
 
 /*
@@ -8547,8 +8585,7 @@ gen_vlan_patch_vid_test(compiler_state_t *cstate, struct block *b_vid)
 	sappend(s, s2);
 
 	/* insert our statements at the beginning of b_vid */
-	sappend(s, b_vid->stmts);
-	b_vid->stmts = s;
+	sprepend_to_block(s, b_vid);
 }
 
 /*
@@ -9115,7 +9152,6 @@ struct block *
 gen_geneve(compiler_state_t *cstate, bpf_u_int32 vni, int has_vni)
 {
 	struct block *b0, *b1;
-	struct slist *s;
 
 	/*
 	 * Catch errors reported by us and routines below us, and return NULL
@@ -9127,20 +9163,15 @@ gen_geneve(compiler_state_t *cstate, bpf_u_int32 vni, int has_vni)
 	b0 = gen_geneve4(cstate, vni, has_vni);
 	b1 = gen_geneve6(cstate, vni, has_vni);
 
-	b0 = gen_or(b0, b1);
-
 	/* Later filters should act on the payload of the Geneve frame,
 	 * update all of the header pointers. Attach this code so that
 	 * it gets executed in the event that the Geneve filter matches. */
-	s = gen_geneve_offsets(cstate);
-
-	b1 = gen_uncond(cstate, 1, s);
-
-	b1 = gen_and(b0, b1);
+	struct block *offsets =
+		sprepend_to_block(gen_geneve_offsets(cstate),gen_true(cstate));
 
 	cstate->is_encap = 1;
 
-	return b1;
+	return gen_and(gen_or(b0, b1), offsets);
 }
 
 /* Check that this is VXLAN and the VNI is correct if
@@ -9303,7 +9334,6 @@ struct block *
 gen_vxlan(compiler_state_t *cstate, bpf_u_int32 vni, int has_vni)
 {
 	struct block *b0, *b1;
-	struct slist *s;
 
 	/*
 	 * Catch errors reported by us and routines below us, and return NULL
@@ -9315,20 +9345,15 @@ gen_vxlan(compiler_state_t *cstate, bpf_u_int32 vni, int has_vni)
 	b0 = gen_vxlan4(cstate, vni, has_vni);
 	b1 = gen_vxlan6(cstate, vni, has_vni);
 
-	b0 = gen_or(b0, b1);
-
 	/* Later filters should act on the payload of the VXLAN frame,
 	 * update all of the header pointers. Attach this code so that
 	 * it gets executed in the event that the VXLAN filter matches. */
-	s = gen_vxlan_offsets(cstate);
-
-	b1 = gen_uncond(cstate, 1, s);
-
-	b1 = gen_and(b0, b1);
+	struct block *offsets =
+		sprepend_to_block(gen_vxlan_offsets(cstate), gen_true(cstate));
 
 	cstate->is_encap = 1;
 
-	return b1;
+	return gen_and(gen_or(b0, b1), offsets);
 }
 
 /* Check that the encapsulated frame has a link layer header
