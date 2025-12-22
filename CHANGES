@@ -87,7 +87,6 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       CMake: Skip snprintf(3) tests when cross-compiling; test whether
         check_c_source_runs() with a trivial program and, if it doesn't
         work, don't run tests that use it.
-      autogen.sh: Delete all trailing blank lines at end of configure.
       Autoconf: Add support for libnl-tiny with pkg-config.
       Autoconf: Fix building of something-only libpcap.
       CI: Implement "make check".
@@ -103,6 +102,8 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       Fix a few device activation bugs.
       Count and timestamp packets better.
       Add kernel filtering, fix userland filtering.
+    FreeBSD:
+      Handle USB devices correctly on FreeBSD-CURRENT as of 2025-12.
     OpenBSD:
       Use getprotobyname_r() correctly on OpenBSD.
     Linux:
@@ -145,6 +146,7 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
         warnings.
       Clean up code that computes the length of a netmask.
       Mind netmap support in pcap_lib_version().
+      Validate remote capture source strings better.
     Link-layer types:
       Add LINKTYPE_ETW/DLT_ETW.
       Add LINKTYPE_NETANALYZER_NG/DLT_NETANALYZER_NG (pull request
@@ -231,6 +233,7 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       DPDK: don't enable it by default.
       Update Npcap SDK to 1.15.
       autogen.sh: Allow to configure Autoconf warnings.
+      autogen.sh: Delete all trailing blank lines at end of configure.
 
 Friday, August 30, 2024 / The Tcpdump Group
   Summary for 1.10.5 libpcap release
