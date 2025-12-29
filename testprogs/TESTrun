@@ -74,7 +74,7 @@ use constant {
 	EX_USAGE => 64,
 	# In this libpcap version filtertest exits with EX_DATAERR if the user input
 	# is invalid and with other status codes for other (memory/file/etc) error
-	# conditions.
+	# conditions.  translatetest implements the same convention.
 	EX_DATAERR => 65,
 	# Likewise, EX_NOINPUT if pcap_open_offline() has failed.
 	EX_NOINPUT => 66,
@@ -85,6 +85,7 @@ my $diff_flags;
 my $timeout_bin;
 my $test_timeout;
 my $filtertest;
+my $translatetest;
 
 sub usage_text {
 	my $detailed = shift;
@@ -107,17 +108,17 @@ Options:
 ";
 	return $ret unless $detailed;
 	$ret .= "
-Set FILTERTEST_TIMEOUT to 0 to disable the timeout completely or to any other
+Set TEST_TIMEOUT to 0 to disable the timeout completely or to any other
 value to override the default timeout.  The timeout applies to every test.
 If TIMEOUT_BIN is not set, the timeout applies iff the default \"timeout\"
 binary works.  If it is set (on macOS there is no default \"timeout\" and the
 binary from GNU coreutils package may be available as \"gtimeout\" only), the
 custom binary must work.
 
-FILTERTEST_BIN and CONFIG_H allow to specify custom paths to respective files
-if the current working directory is not the directory where the build output
-files go to.  Otherwise by default this script finds the files for both
-Autoconf and CMake, both in-tree and out-of-tree builds.
+FILTERTEST_BIN, TRANSLATETEST_BIN and CONFIG_H allow to specify custom paths to
+respective files if the current working directory is not the directory where
+the build output files go to.  Otherwise by default this script finds the
+files for both Autoconf and CMake, both in-tree and out-of-tree builds.
 
 TIMEOUT_BIN allows to specify the path to a timeout(1) binary.
 
@@ -323,6 +324,10 @@ sub skip_no_networks_casecmp {
 		skip_os ('solaris');
 }
 
+sub skip_no_translatetest {
+	return skip_os ('msys');
+}
+
 sub skip_big_endian {
 	return pack ('S', 0x4245) eq 'BE' ? 'big-endian' : '';
 }
@@ -331,9 +336,9 @@ sub skip_little_endian {
 	return pack ('S', 0x454c) eq 'LE' ? 'little-endian' : '';
 }
 
-# In accept_blocks the top-level keys are test block names.  Each test block
-# defines one or more tests.  When possible, a test block name should be easy
-# to relate with the main filter expression, for example, ip_multicast for
+# In filter_accept_blocks the top-level keys are test block names.  Each test
+# block defines one or more tests.  When possible, a test block name should be
+# easy to relate with the main filter expression, for example, ip_multicast for
 # "ip multicast" etc.  However, because in Perl hashes the keys are not ordered,
 # sometimes the easiest way to group the tests in the alphabetically-sorted
 # output is to use an artificial prefix, for example, mtp2_ for "fisu", "lssu",
@@ -367,7 +372,7 @@ sub skip_little_endian {
 # * "unopt" set to a string and "opt" set to undef (if the optimizer rejects
 #   the expression)
 
-my @accept_blocks = (
+my @filter_accept_blocks = (
 	{
 		name => 'bpf_image',
 		DLT => 'EN10MB',
@@ -19090,18 +19095,18 @@ my @accept_blocks = (
 	}, # bool_reduction_returns_not_true
 );
 
-# In apply_blocks each test block always generates two tests: optimized and
-# unoptimized.  (Small tests often produce short bytecode that is already
+# In filter_apply_blocks each test block always generates two tests: optimized
+# and unoptimized.  (Small tests often produce short bytecode that is already
 # optimal, in which case testing the "optimized" version again is a duplicate
 # work.  However, it is not clear yet what would be the right way to avoid the
 # duplicate work without creating gaps in the test coverage.)  A test block is
 # a hash, where the keys have the following meaning:
 #
-# * name, expr and netmask: same as in accept_blocks above
+# * name, expr and netmask: same as in filter_accept_blocks above
 # * savefile (mandatory, string): the file in tests/filter/ to use with
 #   "filtertest -r", this should not have too many packets
 # * results (mandatory, array): the list of program filter results to expect
-my @apply_blocks = (
+my @filter_apply_blocks = (
 	{
 		name => 'pppoed_nullary_on_ctp',
 		savefile => 'loopback.pcap',
@@ -20392,8 +20397,9 @@ sub errstr_rejects_all {
 	return 'expression rejects all packets';
 }
 
-# * name, DLT, expr, netmask and skip: same as in accept_blocks above
-# * savefile: same as in apply_blocks above, but the directory is one level up.
+# * name, DLT, expr, netmask and skip: same as in filter_accept_blocks above
+# * savefile: same as in filter_apply_blocks above, but the directory is one
+#   level up.
 # * errstr (mandatory, string): a substring that must appear in standard error
 #   from filtertest (this verifies that the reason for rejecting the expression
 #   is what the test expects, rather than some unrelated cause).
@@ -20403,7 +20409,7 @@ sub errstr_rejects_all {
 # not define "savefile".  Reject tests that have the savefile as the only cause
 # of the expected failure must define "savefile" and must not define "DLT" or
 # "expr" or "netmask".
-my @reject_tests = (
+my @filter_reject_tests = (
 	{
 		name => 'ether_host',
 		DLT => 'EN10MB',
@@ -22231,7 +22237,7 @@ sub DLT_feature {
 
 # gen_load_internal() -> default
 foreach (pquals_without 'index') {
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "noindex_${_}",
 		DLT => 'EN10MB',
 		expr => "${_}[0] == 0",
@@ -22243,7 +22249,7 @@ foreach (pquals_without '') {
 	# HID -> gen_ncode() -> q.proto == Q_DECNET
 	# HID -> gen_ncode() -> q.proto == Q_LINK
 	# HID -> gen_ncode() -> gen_host() -> default
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "inv_qual_${_}_host_ipv4addr",
 		DLT => 'EN10MB',
 		expr => "${_} host 1.2.3.4",
@@ -22255,7 +22261,7 @@ foreach (pquals_without '') {
 	# HID -> gen_ncode() -> q.proto == Q_DECNET
 	# HID -> gen_ncode() -> q.proto == Q_LINK
 	# HID -> gen_ncode() -> gen_host() -> default
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "inv_qual_${_}_net_ipv4addr",
 		DLT => 'EN10MB',
 		expr => "${_} net 1.2.3.4",
@@ -22265,13 +22271,13 @@ foreach (pquals_without '') {
 	} unless pqual_has ($_, 'net_ipv4');
 
 	# HID6 -> gen_mcode6() -> gen_host6() -> default
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "inv_qual_${_}_host_ipv6addr",
 		DLT => 'EN10MB',
 		expr => "${_} host fe80::",
 		errstr => errstr_invqual ($_, 'ip6 host'),
 	} unless pqual_has ($_, 'host_ipv6');
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "inv_qual_${_}_net_ipv6addr",
 		DLT => 'EN10MB',
 		expr => "${_} net fe80::",
@@ -22280,7 +22286,7 @@ foreach (pquals_without '') {
 
 	# HID NETMASK HID -> gen_mcode() -> q.proto == Q_DECNET
 	# HID NETMASK HID -> gen_mcode() -> default
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "inv_qual_${_}_host_ipv4mask",
 		DLT => 'EN10MB',
 		expr => "${_} host 1.2.3.0 mask 255.255.255.0",
@@ -22290,7 +22296,7 @@ foreach (pquals_without '') {
 
 	# HID NETMASK HID -> gen_mcode() -> q.proto == Q_DECNET
 	# HID NETMASK HID -> gen_mcode() -> gen_host() -> default
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "inv_qual_${_}_net_ipv4mask",
 		DLT => 'EN10MB',
 		expr => "${_} net 1.2.3.0 mask 255.255.255.0",
@@ -22301,7 +22307,7 @@ foreach (pquals_without '') {
 
 	# HID '/' NUM -> gen_mcode() -> q.proto == Q_DECNET
 	# HID '/' NUM -> gen_mcode() -> default
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "inv_qual_${_}_host_ipv4cidr",
 		DLT => 'EN10MB',
 		expr => "${_} host 1.2.3.0/24",
@@ -22311,7 +22317,7 @@ foreach (pquals_without '') {
 
 	# HID '/' NUM -> gen_mcode() -> q.proto == Q_DECNET
 	# HID '/' NUM -> gen_mcode() -> gen_host() -> default
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "inv_qual_${_}_net_ipv4cidr",
 		DLT => 'EN10MB',
 		expr => "${_} net 1.2.3.0/24",
@@ -22320,7 +22326,7 @@ foreach (pquals_without '') {
 	} unless pqual_has ($_, 'net_ipv4');
 
 	# HID6 '/' NUM -> gen_mcode6() -> case Q_HOST -> masklen != 128
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "inv_qual_${_}_host_ipv6cidr",
 		DLT => 'EN10MB',
 		expr => "${_} host fe80::/16",
@@ -22328,13 +22334,13 @@ foreach (pquals_without '') {
 	} unless pqual_has ($_, 'host_ipv6');
 
 	# HID6 '/' NUM -> gen_mcode6() -> gen_host6() -> default
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "inv_qual_${_}_net_ipv6cidr",
 		DLT => 'EN10MB',
 		expr => "${_} net fe80::/16",
 		errstr => errstr_invqual ($_, 'ip6 net'),
 	} unless pqual_has ($_, 'net_ipv6');
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "inv_qual_${_}_host_ipv6addr128",
 		DLT => 'EN10MB',
 		expr => "${_} host fe80::/128",
@@ -22345,7 +22351,7 @@ foreach (pquals_without '') {
 	# gen_scode() -> gen_mac48host_byname -> pcap_ether_hostton() == NULL
 	# gen_scode() -> gen_host46_byname() -> case AF_INET -> continue -> ret == NULL
 	# gen_scode() -> gen_host46_byname() -> gen_host() -> default
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		skip => skip_no_hosts(),
 		name => "inv_qual_${_}_host_ipv4name",
 		DLT => 'EN10MB',
@@ -22358,7 +22364,7 @@ foreach (pquals_without '') {
 
 	# gen_scode() -> q.proto == Q_DECNET
 	# gen_scode() -> gen_host() -> default
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		skip => skip_no_networks(),
 		name => "inv_qual_${_}_net_ipv4name",
 		DLT => 'EN10MB',
@@ -22371,7 +22377,7 @@ foreach (pquals_without '') {
 	# gen_scode() -> gen_mac48host_byname() -> pcap_ether_hostton() == NULL
 	# gen_scode() -> gen_host46_byname() -> case AF_INET6 -> continue -> ret == NULL
 	# gen_scode() -> gen_host46_byname() -> gen_host6() -> default
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		skip => skip_no_hosts(),
 		name => "inv_qual_${_}_host_ipv6name",
 		DLT => 'EN10MB',
@@ -22384,7 +22390,7 @@ foreach (pquals_without '') {
 	# (IPv6 networks cannot have names)
 
 	# gen_ecode() -> q.proto != Q_LINK
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "inv_qual_${_}_host_mac48",
 		DLT => 'EN10MB',
 		expr => "${_} host aa:bb:cc:dd:ee:ff",
@@ -22392,7 +22398,7 @@ foreach (pquals_without '') {
 	} unless pqual_has ($_, 'host_mac48');
 
 	# HID -> gen_ncode() -> q.proto != Q_DECNET -> pcapint_atoin() < 0
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "inv_qual_${_}_host_decnet",
 		DLT => 'EN10MB',
 		expr => "${_} host 12.500",
@@ -22403,7 +22409,7 @@ foreach (pquals_without '') {
 # gen_scode() -> q.proto == Q_DECNET
 # gen_scode() -> gen_gateway() -> default
 foreach (pquals_without 'gateway') {
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		skip => skip_no_ethers() ||
 			skip_no_hosts(),
 		name => "inv_qual_${_}_gateway_ipv4name",
@@ -22416,7 +22422,7 @@ foreach (pquals_without 'gateway') {
 foreach my $pq (pquals_without '') {
 	# HID -> gen_ncode() -> q.proto == Q_DECNET -> q.addr != Q_DEFAULT && q.addr != Q_HOST
 	# HID -> gen_ncode() -> case Q_GATEWAY
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "${pq}_gateway_HID",
 		DLT => 'EN10MB',
 		expr => "$pq gateway 11.12.13.14",
@@ -22424,7 +22430,7 @@ foreach my $pq (pquals_without '') {
 			'\'gateway\' requires a name',
 	};
 	# HID
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "${pq}_${_}_HID",
 		skip => $_ eq 'protochain' ? skip_config_def1 ('NO_PROTOCHAIN') : '',
 		DLT => 'EN10MB',
@@ -22433,7 +22439,7 @@ foreach my $pq (pquals_without '') {
 	} foreach qw(port portrange proto protochain);
 	# HID '/' NUM -> gen_mcode() -> q.proto == Q_DECNET
 	# HID '/' NUM -> gen_mcode() -> default
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "${pq}_gateway_HID_NUM",
 		DLT => 'EN10MB',
 		expr => "$pq gateway 11.12.0.0/16",
@@ -22441,7 +22447,7 @@ foreach my $pq (pquals_without '') {
 			'Mask syntax for networks only',
 	};
 	# HID '/' NUM
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "${pq}_${_}_HID_NUM",
 		skip => $_ eq 'protochain' ? skip_config_def1 ('NO_PROTOCHAIN') : '',
 		DLT => 'EN10MB',
@@ -22450,7 +22456,7 @@ foreach my $pq (pquals_without '') {
 	} foreach qw(port portrange proto protochain);
 	# HID NETMASK HID -> gen_mcode() -> q.proto == Q_DECNET
 	# HID NETMASK HID -> gen_mcode() -> default
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "${pq}_gateway_HID_mask_HID",
 		DLT => 'EN10MB',
 		expr => "$pq gateway 11.12.0.0 mask 255.255.0.0",
@@ -22458,7 +22464,7 @@ foreach my $pq (pquals_without '') {
 			'Mask syntax for networks only',
 	};
 	# HID NETMASK HID
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "${pq}_${_}_HID_mask_HID",
 		skip => $_ eq 'protochain' ? skip_config_def1 ('NO_PROTOCHAIN') : '',
 		DLT => 'EN10MB',
@@ -22466,14 +22472,14 @@ foreach my $pq (pquals_without '') {
 		errstr => "'$_' qualifier applied to IPv4 address and netmask",
 	} foreach qw(port portrange proto protochain);
 	# HID6 -> gen_mcode6() -> default
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "${pq}_gateway_HID6",
 		DLT => 'EN10MB',
 		expr => "$pq gateway fe80::0",
 		errstr => errstr_invqual ('gateway', 'fe80::0'),
 	};
 	# HID6
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "${pq}_${_}_HID6",
 		skip => $_ eq 'protochain' ? skip_config_def1 ('NO_PROTOCHAIN') : '',
 		DLT => 'EN10MB',
@@ -22481,14 +22487,14 @@ foreach my $pq (pquals_without '') {
 		errstr => "'$_' qualifier applied to IPv6 address",
 	} foreach qw(port portrange proto protochain);
 	# HID6 '/' NUM -> gen_mcode6() -> default
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "${pq}_gateway_HID6_NUM",
 		DLT => 'EN10MB',
 		expr => "$pq gateway fe80::0/64",
 		errstr => errstr_invqual ('gateway', 'fe80::0/64'),
 	};
 	# HID6 '/' NUM
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "${pq}_${_}_HID6_NUM",
 		skip => $_ eq 'protochain' ? skip_config_def1 ('NO_PROTOCHAIN') : '',
 		DLT => 'EN10MB',
@@ -22501,7 +22507,7 @@ foreach my $pq (pquals_without '') {
 foreach (pquals_without 'protochain') {
 	# pnum -> gen_ncode() -> q.proto == Q_DECNET -> q.addr != Q_DEFAULT && q.addr != Q_HOST
 	# pnum -> gen_ncode() -> case Q_PROTOCHAIN -> gen_protochain() -> default
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "${_}_protochain_17",
 		skip => skip_config_def1 ('NO_PROTOCHAIN'),
 		DLT => 'EN10MB',
@@ -22514,7 +22520,7 @@ foreach (pquals_without 'protochain') {
 foreach (pquals_without 'proto') {
 	# pnum -> gen_ncode() -> q.proto == Q_DECNET -> q.addr != Q_DEFAULT && q.addr != Q_HOST
 	# pnum -> gen_ncode() -> case Q_PROTO -> gen_proto() -> default
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "${_}_proto_17",
 		DLT => 'EN10MB',
 		expr => "${_} proto 17",
@@ -22526,7 +22532,7 @@ foreach (pquals_without 'proto') {
 foreach (pquals_without 'port') {
 	# pnum -> gen_ncode() -> q.proto == Q_DECNET -> q.addr != Q_DEFAULT && q.addr != Q_HOST
 	# pnum -> gen_ncode() -> case Q_PORT -> port_pq_to_ipproto()
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "${_}_port_80",
 		DLT => 'EN10MB',
 		expr => "${_} port 80",
@@ -22534,7 +22540,7 @@ foreach (pquals_without 'port') {
 	};
 	# gen_scode() -> q.proto == Q_DECNET
 	# gen_scode() -> case Q_PORT -> port_pq_to_ipproto()
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "${_}_port_nosuchport",
 		DLT => 'EN10MB',
 		expr => "${_} port nosuchport",
@@ -22546,7 +22552,7 @@ foreach (pquals_without 'port') {
 foreach (pquals_without 'portrange') {
 	# pnum -> gen_ncode() -> q.proto == Q_DECNET -> q.addr != Q_DEFAULT && q.addr != Q_HOST
 	# pnum -> gen_ncode() -> case Q_PORTRANGE -> port_pq_to_ipproto()
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "${_}_portrange_80",
 		DLT => 'EN10MB',
 		expr => "${_} portrange 80",
@@ -22554,7 +22560,7 @@ foreach (pquals_without 'portrange') {
 	};
 	# gen_scode() -> q.proto == Q_DECNET
 	# gen_scode() -> case Q_PORTRANGE -> port_pq_to_ipproto()
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "${_}_portrange_nosuchport",
 		DLT => 'EN10MB',
 		expr => "${_} portrange nosuchport",
@@ -22566,7 +22572,7 @@ foreach (pquals_without 'portrange') {
 foreach (pquals_without '') {
 	# gen_scode() -> q.proto == Q_DECNET
 	# gen_scode() -> case Q_PROTO -> lookup_proto() -> q.proto != Q_DEFAULT, v == PROTO_UNDEF
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "${_}_proto_nosuchprotocol",
 		DLT => 'EN10MB',
 		expr => "${_} proto nosuchprotocol",
@@ -22575,7 +22581,7 @@ foreach (pquals_without '') {
 	};
 	# gen_scode() -> q.proto == Q_DECNET
 	# gen_scode() -> case Q_PROTOCHAIN -> lookup_proto() -> q.proto != Q_DEFAULT, v == PROTO_UNDEF
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "${_}_protochain_nosuchprotocol",
 		skip => skip_config_def1 ('NO_PROTOCHAIN'),
 		DLT => 'EN10MB',
@@ -22588,7 +22594,7 @@ foreach (pquals_without '') {
 
 foreach (pquals_without 'abbrev') {
 	# pname -> gen_proto_abbrev() -> gen_proto_abbrev_internal() -> default case
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "bare_${_}_IEEE802_11_RADIO",
 		DLT => 'IEEE802_11_RADIO',
 		expr => $_,
@@ -22601,7 +22607,7 @@ foreach (pquals_without 'abbrev') {
 
 # gen_linktype() -> default
 foreach (DLTs_without 'link_proto') {
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "link_proto_1_${_}",
 		DLT => $_,
 		expr => 'link proto 1',
@@ -22611,7 +22617,7 @@ foreach (DLTs_without 'link_proto') {
 
 # gen_broadcast() -> case Q_LINK -> gen_mac48host() -> fail_kw_on_dlt()
 foreach (DLTs_without 'link_broadcast') {
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "link_broadcast_${_}",
 		DLT => $_,
 		expr => 'link broadcast',
@@ -22621,7 +22627,7 @@ foreach (DLTs_without 'link_broadcast') {
 
 # gen_multicast() -> case Q_LINK -> default
 foreach (DLTs_without 'link_multicast') {
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "link_multicast_${_}",
 		DLT => $_,
 		expr => 'link multicast',
@@ -22631,7 +22637,7 @@ foreach (DLTs_without 'link_multicast') {
 
 # gen_vlan() -> default
 foreach (DLTs_without 'vlan') {
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "vlan_${_}",
 		DLT => $_,
 		expr => 'vlan',
@@ -22641,7 +22647,7 @@ foreach (DLTs_without 'vlan') {
 
 # gen_mpls_internal() -> default
 foreach (DLTs_without 'mpls') {
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "mpls_${_}",
 		DLT => $_,
 		expr => 'mpls',
@@ -22651,7 +22657,7 @@ foreach (DLTs_without 'mpls') {
 
 # gen_llc_internal() -> default
 foreach (DLTs_without 'llc') {
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "llc_${_}",
 		DLT => $_,
 		expr => 'llc',
@@ -22661,14 +22667,14 @@ foreach (DLTs_without 'llc') {
 
 foreach (DLTs_without 'wlan') {
 	# gen_p80211_type() -> default
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "type_data_${_}",
 		DLT => $_,
 		expr => 'type data',
 		errstr => errstr_kw_notsup_on ('type/subtype', $_),
 	};
 	# gen_p80211_fcdir() -> default
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "dir_fromds_${_}",
 		DLT => $_,
 		expr => 'dir fromds',
@@ -22679,7 +22685,7 @@ foreach (DLTs_without 'wlan') {
 # gen_scode() -> gen_mac48host_byname() -> gen_mac48host() -> non-WLAN DLT -> default case
 foreach my $DLT (DLTs_without '') {
 	next if ! DLT_feature ($DLT, 'link_host_mac48') || DLT_feature ($DLT, 'wlan');
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "link_${_}_name_${DLT}",
 		skip => skip_no_ethers(),
 		DLT => $DLT,
@@ -22693,14 +22699,14 @@ foreach my $DLT (DLTs_without 'wlan') {
 	next if ! DLT_feature $DLT, 'link_proto';
 	foreach my $dqual (dquals_with 'wlan') {
 		# HID -> gen_ncode() -> gen_host() -> gen_hostop() -> default case
-		push @reject_tests, {
+		push @filter_reject_tests, {
 			name => "${dqual}_ipv4addr_${DLT}",
 			DLT => $DLT,
 			expr => "$dqual 1.2.3.4",
 			errstr => errstr_invkw_notwlan ($dqual),
 		};
 		# gen_scode() -> case Q_NET -> gen_host() -> gen_hostop() -> default case
-		push @reject_tests, {
+		push @filter_reject_tests, {
 			name => "${dqual}_net_name_${DLT}",
 			skip => skip_no_networks(),
 			DLT => $DLT,
@@ -22708,7 +22714,7 @@ foreach my $DLT (DLTs_without 'wlan') {
 			errstr => errstr_invkw_notwlan ($dqual),
 		};
 		# gen_scode() -> case Q_HOST -> q.proto != Q_LINK -> gen_host46_byname() -> gen_host() -> gen_hostop() -> default case
-		push @reject_tests, {
+		push @filter_reject_tests, {
 			name => "${dqual}_noeth_ipv4_noipv6_${DLT}",
 			skip => skip_no_hosts(),
 			DLT => $DLT,
@@ -22717,14 +22723,14 @@ foreach my $DLT (DLTs_without 'wlan') {
 		};
 
 		# HID6 -> gen_mcode6() -> gen_host6() -> gen_hostop6() -> default case
-		push @reject_tests, {
+		push @filter_reject_tests, {
 			name => "${dqual}_host_ipv6addr_${DLT}",
 			DLT => $DLT,
 			expr => "$dqual host 1234::",
 			errstr => errstr_invkw_notwlan ($dqual),
 		};
 		# gen_scode() -> case Q_HOST -> q.proto != Q_LINK -> gen_host46_byname() -> gen_host6() -> gen_hostop6() -> default case
-		push @reject_tests, {
+		push @filter_reject_tests, {
 			name => "${dqual}_noeth_noipv4_ipv6_${DLT}",
 			skip => skip_no_hosts(),
 			DLT => $DLT,
@@ -22733,7 +22739,7 @@ foreach my $DLT (DLTs_without 'wlan') {
 		};
 
 		# HID -> gen_ncode() -> q.proto == Q_DECNET -> gen_host() -> gen_dnhostop() -> default case
-		push @reject_tests, {
+		push @filter_reject_tests, {
 			name => "decnet_${dqual}_dnaddr_${DLT}",
 			DLT => $DLT,
 			expr => "decnet $dqual 12.34",
@@ -22741,14 +22747,14 @@ foreach my $DLT (DLTs_without 'wlan') {
 		};
 
 		# gen_scode() -> gen_port() -> default case
-		push @reject_tests, {
+		push @filter_reject_tests, {
 			name => "${dqual}_port_smtp_${DLT}",
 			DLT => $DLT,
 			expr => "$dqual port smtp",
 			errstr => errstr_invqual ($dqual, 'port'),
 		};
 		# pnum -> gen_ncode() -> gen_port() -> default case
-		push @reject_tests, {
+		push @filter_reject_tests, {
 			name => "${dqual}_port_25_${DLT}",
 			DLT => $DLT,
 			expr => "$dqual port 25",
@@ -22756,14 +22762,14 @@ foreach my $DLT (DLTs_without 'wlan') {
 		};
 
 		# gen_scode() -> gen_portrange() -> default case
-		push @reject_tests, {
+		push @filter_reject_tests, {
 			name => "${dqual}_portrange_smtp_smtp_${DLT}",
 			DLT => $DLT,
 			expr => "$dqual portrange smtp-smtp",
 			errstr => errstr_invqual ($dqual, 'portrange'),
 		};
 		# pnum -> gen_ncode() -> gen_portrange() -> default case
-		push @reject_tests, {
+		push @filter_reject_tests, {
 			name => "${dqual}_portrange_25_${DLT}",
 			DLT => $DLT,
 			expr => "$dqual portrange 25",
@@ -22781,14 +22787,14 @@ foreach my $DLT (DLTs_without 'wlan') {
 	next if ! DLT_feature $DLT, 'link_host_mac48';
 	foreach my $dqual (dquals_with 'wlan') {
 		# EID -> gen_ecode() -> gen_mac48host() -> second default case
-		push @reject_tests, {
+		push @filter_reject_tests, {
 			name => "link_${dqual}_mac48_${DLT}",
 			DLT => $DLT,
 			expr => "link $dqual a:b:c:d:e:f",
 			errstr => errstr_invkw_notwlan ($dqual),
 		};
 		# gen_scode() -> case Q_HOST -> q.proto == Q_LINK -> gen_mac48host_byname() -> gen_mac48host() -> second default case
-		push @reject_tests, {
+		push @filter_reject_tests, {
 			name => "link_${dqual}_eth_noipv4_noipv6_${DLT}",
 			skip => skip_no_ethers(),
 			DLT => $DLT,
@@ -22801,7 +22807,7 @@ foreach my $DLT (DLTs_without 'wlan') {
 
 foreach my $DLT (DLTs_with 'link_host_mac8') {
 	# gen_acode() -> q.addr != Q_DEFAULT && q.addr != Q_HOST
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "link_${_}_mac8_${DLT}",
 		skip => $_ eq 'protochain' ? skip_config_def1 ('NO_PROTOCHAIN') : undef,
 		DLT => $DLT,
@@ -22810,7 +22816,7 @@ foreach my $DLT (DLTs_with 'link_host_mac8') {
 	} foreach qw(net port gateway proto protochain portrange);
 	# gen_acode() -> q.proto != Q_LINK
 	foreach my $pqual (pquals_without 'host_mac8') {
-		push @reject_tests, {
+		push @filter_reject_tests, {
 			name => "${pqual}_host_mac8_${DLT}",
 			DLT => $DLT,
 			expr => "$pqual host \$fe",
@@ -22823,7 +22829,7 @@ foreach my $DLT (DLTs_with 'link_host_mac8') {
 foreach my $DLT (DLTs_with 'link_host_mac8') {
 	foreach my $dqual (dquals_with 'wlan') {
 		# gen_acode() -> gen_mac8host() -> second default case
-		push @reject_tests, {
+		push @filter_reject_tests, {
 			name => "link_${dqual}_mac8_${DLT}",
 			DLT => $DLT,
 			expr => "link $dqual \$25",
@@ -22834,7 +22840,7 @@ foreach my $DLT (DLTs_with 'link_host_mac8') {
 
 # gen_acode() -> gen_mac8host() -> first default case
 foreach (DLTs_without 'link_host_mac8') {
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "link_host_mac8_${_}",
 		DLT => $_,
 		expr => 'link host $21',
@@ -22844,7 +22850,7 @@ foreach (DLTs_without 'link_host_mac8') {
 
 # assert_ss7() -> default
 foreach (DLTs_without 'ss7') {
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "fisu_${_}",
 		DLT => $_,
 		expr => 'fisu',
@@ -22854,13 +22860,13 @@ foreach (DLTs_without 'ss7') {
 
 foreach (DLTs_without 'link_host_mac48') {
 	# gen_scode() -> gen_gateway() -> gen_mac48host_byname() -> fail_kw_on_dlt()
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "gateway_noeth_noipv4_noipv6_${_}",
 		DLT => $_,
 		expr => "gateway $nonexistent",
 		errstr => errstr_kw_notsup_on ('gateway', $_),
 	};
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "gateway_eth_noipv4_noipv6_${_}",
 		skip => skip_no_ethers(),
 		DLT => $_,
@@ -22868,28 +22874,28 @@ foreach (DLTs_without 'link_host_mac48') {
 		errstr => errstr_kw_notsup_on ('gateway', $_),
 	};
 
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "gateway_noeth_noipv4_ipv6_${_}",
 		skip => skip_no_hosts(),
 		DLT => $_,
 		expr => 'gateway noeth-noipv4-ipv6.host123.libpcap.test',
 		errstr => errstr_kw_notsup_on ('gateway', $_),
 	};
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "gateway_noeth_ipv4_noipv6_${_}",
 		skip => skip_no_hosts(),
 		DLT => $_,
 		expr => 'gateway noeth-ipv4-noipv6.host123.libpcap.test',
 		errstr => errstr_kw_notsup_on ('gateway', $_),
 	};
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "gateway_noeth_ipv4_ipv6_${_}",
 		skip => skip_no_hosts(),
 		DLT => $_,
 		expr => 'gateway noeth-ipv4-ipv6.host123.libpcap.test',
 		errstr => errstr_kw_notsup_on ('gateway', $_),
 	};
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "gateway_eth_ipv4_noipv6_${_}",
 		skip => skip_no_ethers() ||
 			skip_no_hosts(),
@@ -22897,7 +22903,7 @@ foreach (DLTs_without 'link_host_mac48') {
 		expr => 'gateway eth-ipv4-noipv6.host123.libpcap.test',
 		errstr => errstr_kw_notsup_on ('gateway', $_),
 	};
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "gateway_eth_noipv4_ipv6_${_}",
 		skip => skip_no_ethers() ||
 			skip_no_hosts(),
@@ -22905,7 +22911,7 @@ foreach (DLTs_without 'link_host_mac48') {
 		expr => 'gateway eth-noipv4-ipv6.host123.libpcap.test',
 		errstr => errstr_kw_notsup_on ('gateway', $_),
 	};
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "gateway_eth_ipv4_ipv6_${_}",
 		skip => skip_no_ethers() ||
 			skip_no_hosts(),
@@ -22915,7 +22921,7 @@ foreach (DLTs_without 'link_host_mac48') {
 	};
 
 	# gen_scode() -> case Q_DEFAULT -> Q_LINK -> fail_kw_on_dlt()
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "link_host_name_${_}",
 		skip => skip_no_ethers(),
 		DLT => $_,
@@ -22923,7 +22929,7 @@ foreach (DLTs_without 'link_host_mac48') {
 		errstr => errstr_kw_notsup_on ('link host NAME', $_),
 	};
 	# gen_ecode() -> fail_kw_on_dlt()
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "link_host_mac48_${_}",
 		DLT => $_,
 		expr => 'link host a:b:c:d:e:f',
@@ -22933,7 +22939,7 @@ foreach (DLTs_without 'link_host_mac48') {
 
 foreach (DLTs_with 'link_host_mac48') {
 	# gen_scode() -> gen_gateway() -> gen_host46_byname() -> pcap_nametoaddrinfo() == NULL
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "gateway_eth_noipv4_noipv6_${_}",
 		skip => skip_no_ethers(),
 		DLT => $_,
@@ -22942,7 +22948,7 @@ foreach (DLTs_with 'link_host_mac48') {
 	};
 
 	# gen_scode() -> gen_gateway() -> gen_host46_byname() -> ret == NULL
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "gateway_eth_noipv4_ipv6_${_}",
 		skip => skip_no_ethers() ||
 			skip_no_hosts(),
@@ -22952,27 +22958,27 @@ foreach (DLTs_with 'link_host_mac48') {
 	};
 
 	# gen_scode() -> gen_gateway() -> gen_mac48host_byname() -> pcap_ether_hostton() == NULL
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "gateway_noeth_noipv4_noipv6_${_}",
 		DLT => $_,
 		expr => "gateway $nonexistent",
 		errstr => errstr_nomac48host ($nonexistent),
 	};
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "gateway_noeth_noipv4_ipv6_${_}",
 		skip => skip_no_hosts(),
 		DLT => $_,
 		expr => 'gateway noeth-noipv4-ipv6.host123.libpcap.test',
 		errstr => errstr_nomac48host ('noeth-noipv4-ipv6.host123.libpcap.test'),
 	};
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "gateway_noeth_ipv4_noipv6_${_}",
 		skip => skip_no_hosts(),
 		DLT => $_,
 		expr => 'gateway noeth-ipv4-noipv6.host123.libpcap.test',
 		errstr => errstr_nomac48host ('noeth-ipv4-noipv6.host123.libpcap.test'),
 	};
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "gateway_noeth_ipv4_ipv6_${_}",
 		skip => skip_no_hosts(),
 		DLT => $_,
@@ -22984,7 +22990,7 @@ foreach (DLTs_with 'link_host_mac48') {
 	# lookup would be made not in the IPv4/IPv6 space, or not at all.  Still
 	# use a hostname that does not exist on the Internet, just in case.
 	# gen_scode() -> gen_mac48host_byname() -> pcap_ether_hostton() == NULL
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "link_host_nonex_${_}",
 		DLT => $_,
 		expr => "link host ${nonexistent}",
@@ -22994,28 +23000,28 @@ foreach (DLTs_with 'link_host_mac48') {
 
 # gen_inbound_outbound() -> default
 foreach (DLTs_without 'inout') {
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "inbound_linux_${_}",
 		skip => skip_os_not ('linux'),
 		DLT => $_,
 		expr => 'inbound',
 		errstr => errstr_notlive ('inbound', $_),
 	};
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "outbound_linux_${_}",
 		skip => skip_os_not ('linux'),
 		DLT => $_,
 		expr => 'outbound',
 		errstr => errstr_notlive ('outbound', $_),
 	};
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "inbound_other_${_}",
 		skip => skip_os ('linux'),
 		DLT => $_,
 		expr => 'inbound',
 		errstr => errstr_kw_notsup_on ('inbound', $_),
 	};
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "outbound_other_${_}",
 		skip => skip_os ('linux'),
 		DLT => $_,
@@ -23026,7 +23032,7 @@ foreach (DLTs_without 'inout') {
 
 # assert_pflog() -> default
 foreach (DLTs_without 'pflog') {
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "reason_congestion_${_}",
 		DLT => $_,
 		expr => 'reason congestion',
@@ -23036,7 +23042,7 @@ foreach (DLTs_without 'pflog') {
 
 # assert_atm() -> default
 foreach (DLTs_without 'atm') {
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "vpi_1_${_}",
 		DLT => $_,
 		expr => 'vpi 1',
@@ -23046,14 +23052,14 @@ foreach (DLTs_without 'atm') {
 
 # gen_ifindex() -> default
 foreach (DLTs_without 'ifindex') {
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "ifindex_1_${_}",
 		skip => skip_os ('linux'),
 		DLT => $_,
 		expr => 'ifindex 1',
 		errstr => errstr_kw_notsup_on ('ifindex', $_),
 	};
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "ifindex_2_${_}",
 		skip => skip_os_not ('linux'),
 		DLT => $_,
@@ -23064,7 +23070,7 @@ foreach (DLTs_without 'ifindex') {
 
 # the prerequisite in gen_protochain()
 foreach (DLTs_with 'var_off_linkpl') {
-	push @reject_tests, {
+	push @filter_reject_tests, {
 		name => "protochain_4_${_}",
 		skip => skip_config_def1 ('NO_PROTOCHAIN'),
 		DLT => $_,
@@ -23072,6 +23078,483 @@ foreach (DLTs_with 'var_off_linkpl') {
 		errstr => '\'protochain\' not supported with variable length headers',
 	};
 }
+
+# This works similar to @filter_accept_blocks.  In each array element the hash
+# keys have the following meaning:
+#
+# * name (mandatory, string): the test name (must be unique).
+# * cfunc (mandatory, string): the C function name (this is the first argument
+#   to translatetest).
+# * aliases (mandatory, array of values): must contain at least one value, each
+#   value is either a string (empty or not) or undef.  A string means the
+#   corresponding C string and is the second argument to translatetest.  Undef
+#   means C NULL and no second argument to translatetest.  All values are
+#   tested, one at a time.
+# * expect (mandatory, string): a string, implicitly prefixed with "OK: ",
+#   which is expected to be included in the standard output stream of
+#   translatetest, which is expected to exit normally.
+
+my @translate_accept_blocks = (
+	##### pcap_nametoeproto()
+	{
+		name => 'nametoeproto_aarp',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcap_nametoeproto',
+		aliases => ['aarp'],
+		expect => '0x80f3',
+	},
+	{
+		name => 'nametoeproto_arp',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcap_nametoeproto',
+		aliases => ['arp'],
+		expect => '0x0806',
+	},
+	{
+		name => 'nametoeproto_atalk',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcap_nametoeproto',
+		aliases => ['atalk'],
+		expect => '0x809b',
+	},
+	{
+		name => 'nametoeproto_decnet',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcap_nametoeproto',
+		aliases => ['decnet'],
+		expect => '0x6003',
+	},
+	{
+		name => 'nametoeproto_ip',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcap_nametoeproto',
+		aliases => ['ip'],
+		expect => '0x0800',
+	},
+	{
+		name => 'nametoeproto_ip6',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcap_nametoeproto',
+		aliases => ['ip6'],
+		expect => '0x86dd',
+	},
+	{
+		name => 'nametoeproto_lat',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcap_nametoeproto',
+		aliases => ['lat'],
+		expect => '0x6004',
+	},
+	{
+		name => 'nametoeproto_lldp',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcap_nametoeproto',
+		aliases => ['lldp'],
+		expect => '0x88cc',
+	},
+	{
+		name => 'nametoeproto_loopback',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcap_nametoeproto',
+		aliases => ['loopback'],
+		expect => '0x9000',
+	},
+	{
+		name => 'nametoeproto_mopdl',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcap_nametoeproto',
+		aliases => ['mopdl'],
+		expect => '0x6001',
+	},
+	{
+		name => 'nametoeproto_moprc',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcap_nametoeproto',
+		aliases => ['moprc'],
+		expect => '0x6002',
+	},
+	{
+		name => 'nametoeproto_rarp',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcap_nametoeproto',
+		aliases => ['rarp'],
+		expect => '0x8035',
+	},
+	{
+		name => 'nametoeproto_sca',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcap_nametoeproto',
+		aliases => ['sca'],
+		expect => '0x6007',
+	},
+	{
+		name => 'nametoeproto_slow',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcap_nametoeproto',
+		aliases => ['slow'],
+		expect => '0x8809',
+	},
+	# pcap_nametoeproto() does not implement any error reporting, it just
+	# returns PROTO_UNDEF for any input that it does not recognize.
+	{
+		name => 'nametoeproto_other',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcap_nametoeproto',
+		aliases => ['unknown', ''],
+		expect => 'PROTO_UNDEF',
+	},
+
+	##### pcap_nametollc()
+	{
+		name => 'nametollc_iso',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcap_nametollc',
+		aliases => ['iso'],
+		expect => '0xfe',
+	},
+	{
+		name => 'nametollc_stp',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcap_nametollc',
+		aliases => ['stp'],
+		expect => '0x42',
+	},
+	{
+		name => 'nametollc_ipx',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcap_nametollc',
+		aliases => ['ipx'],
+		expect => '0xe0',
+	},
+	{
+		name => 'nametollc_netbeui',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcap_nametollc',
+		aliases => ['netbeui'],
+		expect => '0xf0',
+	},
+	# Same as for pcap_nametoeproto() above.
+	{
+		name => 'nametollc_other',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcap_nametollc',
+		aliases => ['unknown', ''],
+		expect => 'PROTO_UNDEF',
+	},
+
+	##### pcapint_atodn()
+	{
+		name => 'atodn_0_0',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcapint_atodn',
+		aliases => ['0.0', '0.00000', '000.0', '000.00000'],
+		expect => '0.0',
+	},
+	{
+		name => 'atodn_31_511',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcapint_atodn',
+		aliases => ['31.511'],
+		expect => '31.511',
+	},
+	{
+		name => 'atodn_63_1023',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcapint_atodn',
+		aliases => ['63.1023', '63.01023', '063.1023', '063.01023'],
+		expect => '63.1023',
+	},
+
+	##### pcapint_atoan()
+	{
+		name => 'atoan_4bit',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcapint_atoan',
+		aliases => ['$0d', '$d', '$0D', '$D'],
+		expect => '$0d',
+	},
+	{
+		name => 'atoan_8bit',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcapint_atoan',
+		aliases => ['$cd', '$cD', '$Cd', '$CD'],
+		expect => '$cd',
+	},
+
+	##### pcapint_parsesrcstr_ex()
+	{
+		name => 'srcstr_file_relfile',
+		skip => skip_no_translatetest(),
+		skip => skip_config_not_def1 ('ENABLE_REMOTE'),
+		cfunc => 'pcapint_parsesrcstr_ex',
+		aliases => ['file://file.pcap'],
+		expect => 'file://file.pcap',
+	},
+	{
+		name => 'srcstr_file_reldir',
+		skip => skip_no_translatetest() || skip_config_not_def1 ('ENABLE_REMOTE'),
+		cfunc => 'pcapint_parsesrcstr_ex',
+		aliases => ['file://dir/'],
+		expect => 'file://dir/',
+	},
+	{
+		name => 'srcstr_file_reldirfile',
+		skip => skip_no_translatetest() || skip_config_not_def1 ('ENABLE_REMOTE'),
+		cfunc => 'pcapint_parsesrcstr_ex',
+		aliases => ['file://dir/file.pcap'],
+		expect => 'file://dir/file.pcap',
+	},
+	{
+		name => 'srcstr_file_absfile',
+		skip => skip_no_translatetest() || skip_config_not_def1 ('ENABLE_REMOTE'),
+		cfunc => 'pcapint_parsesrcstr_ex',
+		aliases => ['file:///file.pcap'],
+		expect => 'file:///file.pcap',
+	},
+	{
+		name => 'srcstr_file_absdir',
+		skip => skip_no_translatetest() || skip_config_not_def1 ('ENABLE_REMOTE'),
+		cfunc => 'pcapint_parsesrcstr_ex',
+		aliases => ['file:///dir/'],
+		expect => 'file:///dir/',
+	},
+	{
+		name => 'srcstr_file_absdirfile',
+		skip => skip_no_translatetest() || skip_config_not_def1 ('ENABLE_REMOTE'),
+		cfunc => 'pcapint_parsesrcstr_ex',
+		aliases => ['file:///dir/file.pcap'],
+		expect => 'file:///dir/file.pcap',
+	},
+	# Although "file://" is valid for pcapint_parsesrcstr_ex(),
+	# pcapint_createsrcstr_ex() would reject the parsed data with an error.
+	{
+		name => 'srcstr_rpcap_local',
+		skip => skip_no_translatetest() || skip_config_not_def1 ('ENABLE_REMOTE'),
+		cfunc => 'pcapint_parsesrcstr_ex',
+		aliases => ['rpcap://'],
+		expect => 'rpcap://',
+	},
+	{
+		name => 'srcstr_local_device',
+		skip => skip_no_translatetest() || skip_config_not_def1 ('ENABLE_REMOTE'),
+		cfunc => 'pcapint_parsesrcstr_ex',
+		aliases => ['rpcap://eth0', 'eth0'],
+		expect => 'rpcap://eth0',
+	},
+);
+
+# This works similar to @filter_reject_tests.  In each array element the hash
+# keys have the following meaning:
+#
+# * name, cfunc: the same as in @translate_accept_blocks above.
+# * arg (mandatory, a value): the same as a single element in "aliases" in
+#   @translate_accept_blocks above.
+# * errstr (mandatory, string): a string, implicitly prefixed with "ERROR: ",
+#   which is expected to be included in the standard error stream of
+#   translatetest, which is expected to exit with EX_DATAERR.
+
+my @translate_reject_tests = (
+	##### pcapint_atodn()
+	{
+		name => 'atodn_64_0',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcapint_atodn',
+		arg => '64.0',
+		errstr => '0',
+	},
+	{
+		name => 'atodn_0_1024',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcapint_atodn',
+		arg => '0.1024',
+		errstr => '0',
+	},
+	{
+		name => 'atodn_64_1024',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcapint_atodn',
+		arg => '64.1024',
+		errstr => '0',
+	},
+	{
+		name => 'atodn_10_a',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcapint_atodn',
+		arg => '10.a',
+		errstr => '0',
+	},
+	{
+		name => 'atodn_a_10',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcapint_atodn',
+		arg => 'a.10',
+		errstr => '0',
+	},
+
+	##### pcapint_atoan()
+	{
+		name => 'atoan_1',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcapint_atoan',
+		arg => '$g',
+		errstr => '0',
+	},
+	{
+		name => 'atoan_2',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcapint_atoan',
+		arg => '$0g',
+		errstr => '0',
+	},
+	{
+		name => 'atoan_3',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcapint_atoan',
+		arg => '$g0',
+		errstr => '0',
+	},
+	{
+		name => 'atoan_4',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcapint_atoan',
+		arg => '0',
+		errstr => '0',
+	},
+	{
+		name => 'atoan_5',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcapint_atoan',
+		arg => '12',
+		errstr => '0',
+	},
+	{
+		name => 'atoan_6',
+		skip => skip_no_translatetest(),
+		cfunc => 'pcapint_atoan',
+		arg => '123',
+		errstr => '0',
+	},
+
+	##### pcapint_parsesrcstr_ex()
+	{
+		name => 'srcstr_null',
+		skip => skip_no_translatetest() || skip_config_not_def1 ('ENABLE_REMOTE'),
+		cfunc => 'pcapint_parsesrcstr_ex',
+		arg => undef,
+		errstr => 'The source string must not be NULL.',
+	},
+	{
+		name => 'srcstr_empty',
+		skip => skip_no_translatetest() || skip_config_not_def1 ('ENABLE_REMOTE'),
+		cfunc => 'pcapint_parsesrcstr_ex',
+		arg => '',
+		errstr => 'The source string must not be empty.',
+	},
+	{
+		name => 'srcstr_ftp',
+		skip => skip_no_translatetest() || skip_config_not_def1 ('ENABLE_REMOTE'),
+		cfunc => 'pcapint_parsesrcstr_ex',
+		arg => 'ftp://',
+		errstr => 'The source string URL scheme is not supported.',
+	},
+	{
+		name => 'srcstr_http_host_dev',
+		skip => skip_no_translatetest() || skip_config_not_def1 ('ENABLE_REMOTE'),
+		cfunc => 'pcapint_parsesrcstr_ex',
+		arg => 'http://host/device',
+		errstr => 'The source string URL scheme is not supported.',
+	},
+	{
+		name => 'noremote_srcstr_null',
+		skip => skip_no_translatetest() || skip_config_def1 ('ENABLE_REMOTE'),
+		cfunc => 'pcapint_parsesrcstr_ex',
+		arg => undef,
+		errstr => 'pcapint_parsesrcstr_ex() is not supported',
+	},
+	{
+		name => 'noremote_srcstr_empty',
+		skip => skip_no_translatetest() || skip_config_def1 ('ENABLE_REMOTE'),
+		cfunc => 'pcapint_parsesrcstr_ex',
+		arg => '',
+		errstr => 'pcapint_parsesrcstr_ex() is not supported',
+	},
+	{
+		name => 'noremote_srcstr_localdev',
+		skip => skip_no_translatetest() || skip_config_def1 ('ENABLE_REMOTE'),
+		cfunc => 'pcapint_parsesrcstr_ex',
+		arg => 'rpcap://eth0',
+		errstr => 'pcapint_parsesrcstr_ex() is not supported',
+	},
+);
+
+##### more pcapint_parsesrcstr_ex() accept blocks
+my %src_scheme = (
+	rpcap => 'rpcap://',
+	rpcaps => 'rpcaps://',
+);
+my %src_auth = (
+	noauth => '',
+	auth1 => 'user@',
+	auth2 => 'user:password@',
+);
+my %src_host = (
+	ipv4 => '192.0.2.100',
+	ipv6 => '[2001:db8:a:b:c:d:e:f]',
+	name => 'somehost',
+);
+my %src_port = (
+	noport => '',
+	portnum => ':4000',
+	portname => ':smtp',
+);
+my %src_dev = (
+	nodev => '/',
+	dev => '/device',
+);
+foreach my $scheme (sort keys %src_scheme) {
+	foreach my $auth (sort keys %src_auth) {
+		foreach my $host (sort keys %src_host) {
+			foreach my $port (sort keys %src_port) {
+				foreach my $dev (sort keys %src_dev) {
+					my $srcstr = $src_scheme{$scheme} .
+						$src_auth{$auth} .
+						$src_host{$host} .
+						$src_port{$port} .
+						$src_dev{$dev};
+					my $srcstr2 = $src_scheme{$scheme} .
+						$src_auth{$auth} .
+						"[$src_host{$host}]" .
+						$src_port{$port} .
+						$src_dev{$dev};
+					push @translate_accept_blocks, {
+						name => "srcstr_${scheme}_${auth}_${host}_${port}_${dev}",
+						skip => skip_no_translatetest() ||
+							skip_config_not_def1 ('ENABLE_REMOTE'),
+						cfunc => 'pcapint_parsesrcstr_ex',
+						aliases => $host ne 'ipv6' ? [$srcstr, $srcstr2] : [$srcstr],
+						expect => $srcstr,
+					};
+				}
+			}
+		}
+	}
+}
+
+##### pcapint_xdtoi()
+push @translate_accept_blocks, {
+	name => "xdtoi_${_}",
+	skip => skip_no_translatetest(),
+	cfunc => 'pcapint_xdtoi',
+	aliases => [ord],
+	expect => "0x0${_}",
+} foreach qw(0 1 2 3 4 5 6 7 8 9);
+push @translate_accept_blocks, {
+	name => "xdtoi_${_}",
+	skip => skip_no_translatetest(),
+	cfunc => 'pcapint_xdtoi',
+	aliases => [ord, ord uc],
+	expect => "0x0${_}",
+} foreach qw(a b c d e f);
 
 sub accept_test_label {
 	return join '_', ('accept', @_);
@@ -23085,7 +23568,67 @@ sub reject_test_label {
 	return join '_', ('reject', @_);
 }
 
+sub assert_named {
+	my $descr = shift;
+	my $hash = shift;
+	return if defined $hash->{name} && $hash->{name} ne '';
+	die "Internal error: $descr <UNKNOWN> does not define a name";
+}
+
+sub assert_exists {
+	my $descr = shift;
+	my $hash = shift;
+	my @keys = @_;
+	foreach (@keys) {
+		next if exists $hash->{$_};
+		die "Internal error: key '$_' is not defined in $descr '$hash->{name}'";
+	}
+}
+
+sub assert_nonempty_strings {
+	my $descr = shift;
+	my $hash = shift;
+	my @keys = @_;
+	assert_exists $descr, $hash, @keys;
+	foreach (@keys) {
+		next if $hash->{$_} ne '';
+		die "Internal error: key '$_' is an empty string in $descr '$hash->{name}'";
+	}
+}
+
+sub assert_nonempty_array {
+	my $descr = shift;
+	my $hash = shift;
+	my $key = shift;
+	assert_exists $descr, $hash, $key;
+	return if scalar @{$hash->{$key}};
+	die "Internal error: $descr '$hash->{name}' defines '$key' as an empty array";
+}
+
+sub validate_generic_accept_block {
+	my $descr = shift;
+	my $test = shift;
+	assert_named $descr, $test;
+	assert_nonempty_array $descr, $test, 'aliases';
+	my %unique = map {$_ => 1} @{$test->{aliases}};
+	if (scalar (keys %unique) != scalar @{$test->{aliases}}) {
+		die "Internal error: $descr '$test->{name}' defines duplicate aliases";
+	}
+}
+
+sub validate_generic_reject_test {
+	my $descr = shift;
+	my $test = shift;
+	assert_named $descr, $test;
+	assert_nonempty_strings $descr, $test, 'errstr';
+}
+
 sub time_test_command {
+	# BSD timeout(1) does not implement --verbose.
+	unshift @_, ($timeout_bin, $test_timeout) if defined $timeout_bin;
+	# It would be much better to pass the arguments as a Perl list, but
+	# that is not possible so long as the command line uses shell
+	# redirection.
 	my $cmdline = join ' ', @_;
 	my $r;
 	my $T;
@@ -23099,15 +23642,19 @@ sub time_test_command {
 	return ($r >>= 8, $T);
 }
 
-sub validate_stdout_test {
+sub run_generic_accept_test {
+	push @_, (
+		'>' . mytmpfile ($filename_stdout),
+		"2>&1",
+	);
 	my ($r, $T) = time_test_command @_;
 
-	return result_timed_out 'filtertest timeout' if $r == TIMED_OUT;
+	return result_timed_out 'test program timeout' if $r == TIMED_OUT;
 
 	return result_failed (
-		'filtertest error',
+		'test program error',
 		file_get_contents mytmpfile $filename_stdout
-	) if $r;
+	) if $r != EX_OK;
 
 	return result_failed (
 		'diff error',
@@ -23120,11 +23667,38 @@ sub validate_stdout_test {
 	return result_passed $T;
 }
 
+sub run_generic_reject_test {
+	my $expected_status = shift;
+	my $expected_errstr = shift;
+	push @_, (
+		'>' . mytmpfile ($filename_stdout),
+		"2>&1",
+	);
+	my ($r, $T) = time_test_command @_;
+
+	return result_failed (
+		'no test program error',
+		file_get_contents mytmpfile $filename_stdout
+	) if $r == EX_OK;
+
+	return result_timed_out 'test program timeout' if $r == TIMED_OUT;
+
+	return result_failed (
+		"test program status $r",
+		file_get_contents mytmpfile $filename_stdout
+	) if $r != $expected_status;
+
+	return result_failed (
+		'error string mismatch',
+		file_get_contents mytmpfile $filename_stdout
+	) if ! string_in_file ($expected_errstr, mytmpfile $filename_stdout);
+
+	return result_passed $T;
+}
+
 sub common_filtertest_args {
 	my $test = shift;
-	# BSD timeout(1) does not implement --verbose.
-	my @args = defined $timeout_bin ? ($timeout_bin, $test_timeout) : ();
-	push @args, $filtertest;
+	my @args = ($filtertest);
 	push @args, ('-s', $test->{snaplen}) if defined $test->{snaplen};
 	push @args, ('-m', $test->{netmask}) if defined $test->{netmask};
 	push @args, '-O' unless $test->{optimize};
@@ -23132,7 +23706,23 @@ sub common_filtertest_args {
 	return @args;
 }
 
-sub run_accept_test {
+sub common_translatetest_args {
+	my $test = shift;
+	my @args = ($translatetest, $test->{cfuncname});
+	# The hash key exists.  For the value Perl undef means C NULL and no
+	# command-line argument in the shell command, an empty Perl string
+	# means an empty C string and a quoted empty string argument in the
+	# shell command, and a non-empty Perl string means a non-empty C string
+	# and a quoted non-empty string in the shell command.  Obviously, this
+	# simple solution does not support arbitrary strings or binary data,
+	# but the existing tests do not require that yet.
+	if (defined $test->{cfuncarg}) {
+		push @args, ($test->{cfuncarg} eq '' ? '\'\'' : "'$test->{cfuncarg}'");
+	}
+	return @args;
+}
+
+sub run_filter_accept_test {
 	my $test = shift;
 	my @args = common_filtertest_args $test;
 	# Write the filter expression to a file because the version of
@@ -23146,13 +23736,11 @@ sub run_accept_test {
 		'-F',
 		mytmpfile ($filename_filter),
 		$test->{DLT},
-		'>' . mytmpfile ($filename_stdout),
-		"2>&1"
 	);
-	return validate_stdout_test @args;
+	return run_generic_accept_test @args;
 }
 
-sub run_apply_test {
+sub run_filter_apply_test {
 	my $test = shift;
 	my @args = common_filtertest_args $test;
 	file_put_contents mytmpfile ($filename_filter), $test->{expr};
@@ -23162,13 +23750,17 @@ sub run_apply_test {
 		mytmpfile ($filename_filter),
 		'-r',
 		SAVEFILE_DIR . $test->{savefile},
-		'>' . mytmpfile ($filename_stdout),
-		"2>&1"
 	);
-	return validate_stdout_test @args;
+	return run_generic_accept_test @args;
 }
 
-sub run_reject_test {
+sub run_translate_accept_test {
+	my $test = shift;
+	file_put_contents mytmpfile ($filename_expected), $test->{expected};
+	return run_generic_accept_test common_translatetest_args $test;
+}
+
+sub run_filter_reject_test {
 	my $test = shift;
 	my @args = common_filtertest_args $test;
 	push @args, ('-r', SAVEFILE_DIR . $test->{savefile}) if defined $test->{savefile};
@@ -23177,30 +23769,13 @@ sub run_reject_test {
 		push @args, ('-F', mytmpfile ($filename_filter));
 	}
 	push @args, $test->{DLT} if defined $test->{DLT};
-	push @args, (
-		'>' . mytmpfile ($filename_stdout),
-		"2>&1",
-	);
-	my ($r, $T) = time_test_command @args;
+	return run_generic_reject_test $test->{exitstatus}, $test->{expected}, @args;
+}
 
-	return result_failed (
-		'no filtertest error',
-		file_get_contents mytmpfile $filename_stdout
-	) if $r == 0;
-
-	return result_timed_out 'filtertest timeout' if $r == TIMED_OUT;
-
-	return result_failed (
-		"filtertest status $r",
-		file_get_contents mytmpfile $filename_stdout
-	) if $r != $test->{exitstatus};
-
-	return result_failed (
-		'error string mismatch',
-		file_get_contents mytmpfile $filename_stdout
-	) if ! string_in_file ($test->{expected}, mytmpfile $filename_stdout);
-
-	return result_passed $T;
+sub run_translate_reject_test {
+	my $test = shift;
+	return run_generic_reject_test $test->{exitstatus}, $test->{expected},
+		common_translatetest_args $test;
 }
 
 # Sort all hash elements by key, otherwise the pseudo-random ordering in Perl
@@ -23214,28 +23789,13 @@ sub run_reject_test {
 # original positions, this makes it simple to distribute the tests and to
 # collect the results preserving the ordering.
 my @ready_to_run;
-foreach my $test (@accept_blocks) {
-	if (! defined $test->{name} || $test->{name} eq '') {
-		die "Internal error: accept test block <UNKNOWN> does not define key 'name'";
-	}
-	foreach ('DLT', 'aliases') {
-		next if defined $test->{$_};
-		die "Internal error: accept test block '$test->{name}' does not define key '$_'";
-	}
-	if ($test->{DLT} eq '') {
-		die "Internal error: key 'DLT' is an empty string in apply test block '$test->{name}'";
-	}
-	if (! scalar @{$test->{aliases}}) {
-		die "Internal error: accept test block '$test->{name}' defines zero aliases";
-	} else {
-		my %unique = map {$_ => 1} @{$test->{aliases}};
-		if (scalar (keys %unique) != scalar @{$test->{aliases}}) {
-			die "Internal error: accept test block '$test->{name}' defines duplicate aliases";
-		}
-	}
+foreach my $test (@filter_accept_blocks) {
+	my $descr = 'filter accept block';
+	validate_generic_accept_block $descr, $test;
+	assert_nonempty_strings $descr, $test, 'DLT';
 	if (exists $test->{optunopt}) {
 		if (exists $test->{opt} || exists $test->{unopt}) {
-			die "Internal error: accept test block '$test->{name}' defines 'optunopt', thus must define neither 'opt' nor 'unopt'";
+			die "Internal error: $descr '$test->{name}' defines 'optunopt', thus must define neither 'opt' nor 'unopt'";
 		}
 		# Expand the abbreviation early to avoid complicating the loops below.
 		# In this branch "opt" and "unopt" are obviously identical, which is the
@@ -23244,13 +23804,13 @@ foreach my $test (@accept_blocks) {
 		delete $test->{optunopt};
 	} else {
 		if (! exists $test->{unopt} || ! exists $test->{opt}) {
-			die "Internal error: accept test block '$test->{name}' defines only one of 'opt' and 'unopt'";
+			die "Internal error: $descr '$test->{name}' defines only one of 'opt' and 'unopt'";
 		}
 		delete $test->{opt} if ! defined $test->{opt}; # Optimization would return an error.
 		# In this branch "opt" and "unopt" could potentially be identical, which
 		# would be not the intended meaning, so reject this.
 		if (exists $test->{opt} && $test->{opt} eq $test->{unopt}) {
-			die "Internal error: accept test block '$test->{name}' defines 'opt' and 'unopt' identically";
+			die "Internal error: $descr '$test->{name}' defines 'opt' and 'unopt' identically";
 		}
 	}
 	# Make the number of skip requests equal to the number of tests, but
@@ -23288,7 +23848,7 @@ foreach my $test (@accept_blocks) {
 				next if defined $only_one && $only_one ne $label;
 				push @ready_to_run, {
 					label => $label,
-					func => \&run_accept_test,
+					func => \&run_filter_accept_test,
 					DLT => $test->{DLT},
 					expr => $_,
 					snaplen => defined $test->{snaplen} ? $test->{snaplen} : undef,
@@ -23301,21 +23861,11 @@ foreach my $test (@accept_blocks) {
 		}
 	}
 }
-foreach my $block (@apply_blocks) {
-	if (! defined $block->{name} || $block->{name} eq '') {
-		die "Internal error: apply test block <UNKNOWN> does not define key 'name'";
-	}
-	foreach ('savefile', 'expr', 'results') {
-		next if defined $block->{$_};
-		die "Internal error: apply test block '$block->{name}' does not define key '$_'";
-	}
-	foreach ('savefile', 'expr') {
-		next if $block->{$_} ne '';
-		die "Internal error: key '$_' is an empty string in apply test block '$block->{name}'";
-	}
-	if (! scalar @{$block->{results}}) {
-		die "Internal error: apply test block '$block->{name}' defines zero results";
-	}
+foreach my $block (@filter_apply_blocks) {
+	my $descr = 'filter apply block';
+	assert_named $descr, $block;
+	assert_nonempty_strings $descr, $block, 'savefile', 'expr';
+	assert_nonempty_array $descr, $block, 'results';
 	my $skip_reason = (defined $block->{skip} && $block->{skip} ne '') ?
 		$block->{skip} : undef;
 	# Convert the array to filtertest output format.
@@ -23336,7 +23886,7 @@ foreach my $block (@apply_blocks) {
 
 		push @ready_to_run, {
 			label => $label,
-			func => \&run_apply_test,
+			func => \&run_filter_apply_test,
 			netmask => defined $block->{netmask} ? $block->{netmask} : undef,
 			optimize => int ($optunopt eq 'opt'),
 			expr => $block->{expr},
@@ -23345,22 +23895,18 @@ foreach my $block (@apply_blocks) {
 		};
 	}
 }
-foreach my $test (@reject_tests) {
-	if (! defined $test->{name} || $test->{name} eq '') {
-		die "Internal error: reject test <UNKNOWN> does not define key 'name'";
-	}
-	if (! defined $test->{errstr} || $test->{errstr} eq '') {
-		die "Internal error: reject test '$test->{name}' does not define key 'errstr'";
-	}
+foreach my $test (@filter_reject_tests) {
+	my $descr = 'filter reject test';
+	validate_generic_reject_test $descr, $test;
 	if (defined $test->{savefile}) {
 		foreach ('DLT', 'expr', 'netmask') {
 			next unless exists $test->{$_};
-			die "Internal error: reject test '$test->{name}' specifies both 'savefile' and '$_'";
+			die "Internal error: $descr '$test->{name}' specifies both 'savefile' and '$_'";
 		}
 	} else {
 		foreach ('DLT', 'expr') {
 			next if defined $test->{$_} && $test->{$_} ne '';
-			die "Internal error: reject test '$test->{name}' defines neither 'savefile' nor '$_'";
+			die "Internal error: $descr '$test->{name}' defines neither 'savefile' nor '$_'";
 		}
 	}
 	my $label = reject_test_label $test->{name};
@@ -23376,7 +23922,7 @@ foreach my $test (@reject_tests) {
 		# The test requires a savefile only.
 		push @ready_to_run, {
 			label => $label,
-			func => \&run_reject_test,
+			func => \&run_filter_reject_test,
 			savefile => $test->{savefile},
 			expected => $test->{errstr},
 			exitstatus => EX_NOINPUT,
@@ -23391,12 +23937,66 @@ foreach my $test (@reject_tests) {
 		# enabled.  So enable optimization for all expression-based reject tests.
 		push @ready_to_run, {
 			label => $label,
-			func => \&run_reject_test,
+			func => \&run_filter_reject_test,
 			DLT => $test->{DLT},
 			netmask => defined $test->{netmask} ? $test->{netmask} : undef,
 			optimize => 1,
 			expr => $test->{expr},
 			expected => $test->{errstr},
+			exitstatus => EX_DATAERR,
+		};
+	}
+}
+
+foreach my $block (@translate_accept_blocks) {
+	my $descr = 'parse accept block';
+	validate_generic_accept_block $descr, $block;
+	assert_nonempty_strings $descr, $block, 'cfunc', 'expect';
+	my $skip_reason = (defined $block->{skip} && $block->{skip} ne '') ?
+		$block->{skip} : undef;
+	my $i = 0;
+	foreach (@{$block->{aliases}}) {
+		my $label = accept_test_label 'parse', $block->{name}, $i++;
+		next if defined $only_one && $only_one ne $label;
+		if (defined $skip_reason) {
+			push @ready_to_run, {
+				label => $label,
+				func => \&run_skip_test,
+				skip => $print_skipped ? $skip_reason : '',
+			};
+			$skip_reason = '';
+		} else {
+			push @ready_to_run, {
+				label => $label,
+				func => \&run_translate_accept_test,
+				cfuncname => $block->{cfunc},
+				cfuncarg => $_,
+				expected => "OK: $block->{expect}\n",
+			};
+		}
+	}
+}
+foreach my $test (@translate_reject_tests) {
+	my $descr = 'parse reject test';
+	validate_generic_reject_test $descr, $test;
+	assert_exists $descr, $test, 'arg';
+	# "arg" can be empty in some tests, this is normal.
+	my $label = reject_test_label 'parse', $test->{name};
+	next if defined $only_one && $only_one ne $label;
+
+	if (defined $test->{skip} && $test->{skip} ne '') {
+		push @ready_to_run, {
+			label => $label,
+			func => \&run_skip_test,
+			skip => $print_skipped ? $test->{skip} : '',
+		};
+	} else {
+		push @ready_to_run, {
+			label => $label,
+			func => \&run_translate_reject_test,
+			cfuncname => $test->{cfunc},
+			cfuncarg => $test->{arg},
+			expected => "ERROR: $test->{errstr}",
 			exitstatus => EX_DATAERR,
 		};
 	}
@@ -23425,15 +24025,27 @@ if (system ("$filtertest -h >/dev/null 2>&1") >> 8) {
 	exit 2;
 }
 
+$translatetest = defined $ENV{TRANSLATETEST_BIN} ? $ENV{TRANSLATETEST_BIN} :
+	string_in_file ('/* cmakeconfig.h.in */', $config_h) ? './run/translatetest' :
+	'./testprogs/translatetest';
+
+# translatetest implements the same convention.
+if (system ("$translatetest -h >/dev/null 2>&1") >> 8) {
+	# Make it easier to see what the problem is.
+	system $translatetest;
+	print STDERR "ERROR: $translatetest is not usable\n";
+	exit 2;
+}
+
 # Every test in this file uses an expression that under normal conditions takes
 # well under one second to process, so if a filtertest invocation is taking
 # longer, it is likely a regression.  Or an invocation via Valgrind, which
 # demands a sensible host-specific override of the timeout value.
-$test_timeout = defined $ENV{FILTERTEST_TIMEOUT} ?
-	$ENV{FILTERTEST_TIMEOUT} : 1;
+$test_timeout = defined $ENV{TEST_TIMEOUT} ?
+	$ENV{TEST_TIMEOUT} : 1;
 
 if ($test_timeout eq '0') {
-	print "INFO: Not using a test timeout (FILTERTEST_TIMEOUT=0).\n";
+	print "INFO: Not using a test timeout (TEST_TIMEOUT=0).\n";
 } elsif (defined $ENV{TIMEOUT_BIN}) {
 	$timeout_bin = $ENV{TIMEOUT_BIN};
 	if (system ($timeout_bin, '0.1', 'sleep', '10') >> 8 != TIMED_OUT) {

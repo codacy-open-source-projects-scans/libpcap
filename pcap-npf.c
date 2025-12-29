@@ -1383,11 +1383,11 @@ pcap_can_set_rfmon_npf(pcap_t *p)
 }
 
 /*
- * Get a list of time stamp types.
+ * Get lists of time stamp types and precisions.
  */
 #ifdef HAVE_PACKET_GET_TIMESTAMP_MODES
 static int
-get_ts_types(const char *device, pcap_t *p, char *ebuf)
+get_ts_support(const char *device, pcap_t *p, char *ebuf)
 {
 	char *device_copy = NULL;
 	ADAPTER *adapter = NULL;
@@ -1402,6 +1402,12 @@ get_ts_types(const char *device, pcap_t *p, char *ebuf)
 	ULONG *modes = NULL;
 	int status = 0;
 
+	/*
+	 * This is called in pcapint_create_interface(), after the
+	 * pcap_t is allocated and initialized, so the time stamp
+	 * type list and the time stamp precision lists are both
+	 * empty.
+	 */
 	do {
 		/*
 		 * First, find out how many time stamp modes we have.
@@ -1453,8 +1459,6 @@ get_ts_types(const char *device, pcap_t *p, char *ebuf)
 			 */
 			if (error == ERROR_BAD_UNIT ||
 			    error == ERROR_ACCESS_DENIED) {
-				p->tstamp_type_count = 0;
-				p->tstamp_type_list = NULL;
 				status = 0;
 			} else {
 				pcapint_fmt_errmsg_for_win32_err(ebuf,
@@ -1462,6 +1466,10 @@ get_ts_types(const char *device, pcap_t *p, char *ebuf)
 				    "Error opening adapter");
 				status = -1;
 			}
+
+			/*
+			 * We're done; clean up and return the status.
+			 */
 			break;
 		}
 
@@ -1635,6 +1643,25 @@ get_ts_types(const char *device, pcap_t *p, char *ebuf)
 			}
 		}
 		p->tstamp_type_count = num_ts_types;
+
+#ifdef PACKET_MODE_NANO
+		/*
+		 * Check if we support nanosecond time stamps.
+		 */
+		if (PacketSetMode(adapter, PACKET_MODE_NANO)) {
+			p->tstamp_precision_list = malloc(2 * sizeof(u_int));
+			if (p->tstamp_precision_list == NULL) {
+				pcapint_fmt_errmsg_for_errno(ebuf, PCAP_ERRBUF_SIZE,
+						errno, "malloc");
+				pcap_close(p);
+				return (NULL);
+			}
+			p->tstamp_precision_list[0] = PCAP_TSTAMP_PRECISION_MICRO;
+			p->tstamp_precision_list[1] = PCAP_TSTAMP_PRECISION_NANO;
+			p->tstamp_precision_count = 2;
+		}
+#endif /* PACKET_MODE_NANO */
+
 	} while (0);
 
 	/* Clean up temporary allocations */
@@ -1652,7 +1679,7 @@ get_ts_types(const char *device, pcap_t *p, char *ebuf)
 }
 #else /* HAVE_PACKET_GET_TIMESTAMP_MODES */
 static int
-get_ts_types(const char *device _U_, pcap_t *p _U_, char *ebuf _U_)
+get_ts_support(const char *device _U_, pcap_t *p _U_, char *ebuf _U_)
 {
 	/*
 	 * Nothing to fetch, so it always "succeeds".
@@ -1673,27 +1700,10 @@ pcapint_create_interface(const char *device _U_, char *ebuf)
 	p->activate_op = pcap_activate_npf;
 	p->can_set_rfmon_op = pcap_can_set_rfmon_npf;
 
-	if (get_ts_types(device, p, ebuf) == -1) {
+	if (get_ts_support(device, p, ebuf) == -1) {
 		pcap_close(p);
 		return (NULL);
 	}
-
-#ifdef PACKET_MODE_NANO
-	/*
-	 * We claim that we support microsecond and nanosecond time
-	 * stamps.
-	 */
-	p->tstamp_precision_list = malloc(2 * sizeof(u_int));
-	if (p->tstamp_precision_list == NULL) {
-		pcapint_fmt_errmsg_for_errno(ebuf, PCAP_ERRBUF_SIZE,
-		    errno, "malloc");
-		pcap_close(p);
-		return (NULL);
-	}
-	p->tstamp_precision_list[0] = PCAP_TSTAMP_PRECISION_MICRO;
-	p->tstamp_precision_list[1] = PCAP_TSTAMP_PRECISION_NANO;
-	p->tstamp_precision_count = 2;
-#endif /* PACKET_MODE_NANO */
 
 	return (p);
 }

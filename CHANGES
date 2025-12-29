@@ -97,6 +97,7 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       filtertest: Add support for stdin as "-" to the -F option.
       Rename CMake option to ENABLE_PROTOCHAIN to match Autoconf.
       Remove the "disable IPv6" build option.
+      translatetest: Add a test program for various translation functions.
     Hurd:
       Support network capture devices too.
       Fix a few device activation bugs.
@@ -140,13 +141,13 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       gencode: Add a missing free() in gen_scode().
       Remove "DLT_" from the descriptions of two dlt_choices[] entries.
       Report the size of time_t in the version string.
+      Validate remote capture source strings better.
     Source code:
       Remove some unneeded includes.
       pcapint_find_function() changed to return "void *" to avoid
         warnings.
       Clean up code that computes the length of a netmask.
       Mind netmap support in pcap_lib_version().
-      Validate remote capture source strings better.
     Link-layer types:
       Add LINKTYPE_ETW/DLT_ETW.
       Add LINKTYPE_NETANALYZER_NG/DLT_NETANALYZER_NG (pull request
@@ -209,6 +210,8 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
         captures.
       Fix a bug in error message character encoding mapping from UTF-16
         to UTF-8.
+      Check at create time whether the NPF driver supports nanosecond
+        precision.
     D-Bus:
       Fix message leak.
     Capture file writing:
