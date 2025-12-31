@@ -110,6 +110,8 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
     Linux:
       Do not use ether_hostton() from musl libc.
       Fix propagation of getprotobyname_r() errors.
+      Don't treat permission failures trying to fetch connection status
+        as errors, just indicate connection status unknown.
     Haiku:
       Look for ethers(5) in /boot/system/settings/network/.
     DAG:
@@ -142,6 +144,7 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       Remove "DLT_" from the descriptions of two dlt_choices[] entries.
       Report the size of time_t in the version string.
       Validate remote capture source strings better.
+      CVE-2025-11961: Fix OOBR and OOBW in pcap_ether_aton().
     Source code:
       Remove some unneeded includes.
       pcapint_find_function() changed to return "void *" to avoid
@@ -175,6 +178,7 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       IEEE 802.11: Fix three undefined behaviors in grammar.y.
       Fix IPv4 multicast filtering to only include 224.0.0.0/4.
       Fix "(arp|rarp) host NAME" to ignore IPv6 quietly.
+      Fix ARCnet address parsing.
     Linux:
       Fix check for mac80211 phydev.
       Don't create monitor-mode interface if we're capturing on one.
@@ -208,8 +212,8 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       Fix filtering for VLAN-tagged frames.
       Add support for Npcap's nanosecond-resolution time stamps in
         captures.
-      Fix a bug in error message character encoding mapping from UTF-16
-        to UTF-8.
+      CVE-2025-11964: Fix a bug in error message character encoding mapping
+        from UTF-16 to UTF-8.
       Check at create time whether the NPF driver supports nanosecond
         precision.
     D-Bus:
