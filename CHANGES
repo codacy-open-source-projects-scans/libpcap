@@ -49,6 +49,10 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       Extend "link (host|broadcast)" support onto DLT_BACNET_MS_TP.
       Do not try matching RFC 1051 system codes for ARCnet.
       Enable various primitives for DLT_DSA_TAG_BRCM and DLT_DSA_TAG_DSA.
+      Test link protocol once per AF, not per address.
+      Sort resolved IPv4 and IPv6 addresses.
+      In "gateway" negate the host(s), but not the protocol.
+      Reject "gateway" within MPLS, VXLAN or Geneve.
     rpcap:
       Support user names and passwords in rpcap:// and rpcaps:// URLs.
       Add a -t flag to rpcapd to specify the data channel port; from
@@ -68,6 +72,8 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       Discuss Linux BPF extensions in the man pages.
       Note endianness in pcap_compile(3PCAP) and pcap_lookupnet(3PCAP).
       man: Document devices, interfaces and "any" better.
+      Remove list of OSes that support "ipv6-icmp"; all the ones we
+        support appear to do so.
     Building and testing:
       Apply GNU Hurd support patch from the Debian package.
       CI: Introduce and use LIBPCAP_CMAKE_TAINTED.
