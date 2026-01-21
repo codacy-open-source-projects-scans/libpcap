@@ -74,6 +74,7 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       man: Document devices, interfaces and "any" better.
       Remove list of OSes that support "ipv6-icmp"; all the ones we
         support appear to do so.
+      Add a README.qnx.md file.
     Building and testing:
       Apply GNU Hurd support patch from the Debian package.
       CI: Introduce and use LIBPCAP_CMAKE_TAINTED.
@@ -104,6 +105,8 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       Rename CMake option to ENABLE_PROTOCHAIN to match Autoconf.
       Remove the "disable IPv6" build option.
       translatetest: Add a test program for various translation functions.
+      Autoconf: Add QNX support to AC_LBL_LIBRARY_NET().
+      capturetest: Treat SA_RESTART as optional.
     Hurd:
       Support network capture devices too.
       Fix a few device activation bugs.
@@ -143,6 +146,9 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
     Netmap:
       Set packet captured length based on the snapshot length and return
         value of the capture filter.
+    QNX:
+      Disable zero-copy BPF to work around portability issues.
+      Use "unix.h" instead of the missing <sysexits.h>.
 
 Tuesday, December 30, 2025 / The Tcpdump Group
   Summary for 1.10.6 libpcap release
