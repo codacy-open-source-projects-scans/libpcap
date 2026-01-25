@@ -22276,18 +22276,14 @@ my @filter_reject_tests = (
 	},
 	{
 		name => 'src_gateway',
-		skip => skip_no_ethers() ||
-			skip_no_hosts(),
 		DLT => 'EN10MB',
-		expr => 'src gateway eth-ipv4-noipv6.host123.libpcap.test',
+		expr => "src gateway $nonexistent",
 		errstr => errstr_syntax,
 	},
 	{
 		name => 'dst_gateway',
-		skip => skip_no_ethers() ||
-			skip_no_hosts(),
 		DLT => 'EN10MB',
-		expr => 'dst gateway eth-ipv4-noipv6.host123.libpcap.test',
+		expr => "dst gateway $nonexistent",
 		errstr => errstr_syntax,
 	},
 	{
@@ -23725,7 +23721,6 @@ foreach (pquals_without '') {
 
 	# gen_scode() -> q.proto == Q_DECNET
 	# gen_scode() -> gen_mac48host_byname -> pcap_ether_hostton() == NULL
-	# gen_scode() -> gen_host46_byname() -> case AF_INET -> continue -> ret == NULL
 	# gen_scode() -> gen_host46_byname() -> gen_host() -> default
 	push @filter_reject_tests, {
 		skip => skip_no_hosts(),
@@ -23751,7 +23746,6 @@ foreach (pquals_without '') {
 
 	# gen_scode() -> q.proto == Q_DECNET
 	# gen_scode() -> gen_mac48host_byname() -> pcap_ether_hostton() == NULL
-	# gen_scode() -> gen_host46_byname() -> case AF_INET6 -> continue -> ret == NULL
 	# gen_scode() -> gen_host46_byname() -> gen_host6() -> default
 	push @filter_reject_tests, {
 		skip => skip_no_hosts(),
