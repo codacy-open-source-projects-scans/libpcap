@@ -294,6 +294,12 @@ struct addrinfo {
 // IPv6 mandatory outer header (Version, ..., Destination Address) length.
 #define IP6_HDRLEN 40
 
+// RFC 3032 Section 2.1, the "Label Stack Entry" 32-bit structure.
+#define MPLS_STACKENTRY_LEN 4
+// Ibid., the "Label" 20-bit field.
+#define MPLS_LABEL_MAX 0xfffffU
+#define MPLS_LABEL_SHIFT 12
+
 #ifdef HAVE_OS_PROTO_H
 #include "os-proto.h"
 #endif
@@ -2422,7 +2428,8 @@ gen_load_a(compiler_state_t *cstate, enum e_offrel offrel, u_int offset,
 		break;
 
 	case OR_PREVMPLSHDR:
-		s = gen_load_absoffsetrel(cstate, &cstate->off_linkpl, cstate->off_nl - 4 + offset, size);
+		s = gen_load_absoffsetrel(cstate, &cstate->off_linkpl,
+		    cstate->off_nl - MPLS_STACKENTRY_LEN + offset, size);
 		break;
 
 	case OR_LINKPL:
@@ -3742,6 +3749,20 @@ gen_prevlinkhdr_check(compiler_state_t *cstate)
 	/*NOTREACHED*/
 }
 
+// Match the specified version number in the Internet Protocol header.
+static struct block *
+gen_ip_version(compiler_state_t *cstate, const enum e_offrel offrel,
+    const uint8_t ver)
+{
+	switch (ver) {
+	case 4:
+	case 6:
+		return gen_mcmp(cstate, offrel, 0, BPF_B, ver << 4, 0xf0);
+	default:
+		bpf_error(cstate, ERRSTR_FUNC_VAR_INT, __func__, "ver", ver);
+	}
+}
+
 /*
  * The three different values we should check for when checking for an
  * IPv6 packet with DLT_NULL.
@@ -3859,20 +3880,17 @@ gen_linktype(compiler_state_t *cstate, bpf_u_int32 ll_proto)
 	case DLT_RAW:
 		/*
 		 * These types don't provide any type field; packets
-		 * are always IPv4 or IPv6.
-		 *
-		 * XXX - for IPv4, check for a version number of 4, and,
-		 * for IPv6, check for a version number of 6?
+		 * are always IPv4 or IPv6.  Hence in this context the
+		 * to-be-confirmed IPv4/IPv6 header begins at the link-layer
+		 * header.
 		 */
 		switch (ll_proto) {
 
 		case ETHERTYPE_IP:
-			/* Check for a version number of 4. */
-			return gen_mcmp(cstate, OR_LINKHDR, 0, BPF_B, 0x40, 0xF0);
+			return gen_ip_version(cstate, OR_LINKHDR, 4);
 
 		case ETHERTYPE_IPV6:
-			/* Check for a version number of 6. */
-			return gen_mcmp(cstate, OR_LINKHDR, 0, BPF_B, 0x60, 0xF0);
+			return gen_ip_version(cstate, OR_LINKHDR, 6);
 
 		default:
 			return gen_false(cstate);	/* always false */
@@ -5113,6 +5131,16 @@ gen_dnhostop(compiler_state_t *cstate, bpf_u_int32 addr, int dir)
 }
 
 /*
+ * Assume the link-layer payload data just before off_nl (L3) is an MPLS label
+ * (L2.5) and test whether the label has Bottom of Stack bit set.
+ */
+static struct block *
+gen_just_after_mpls_stack(compiler_state_t *cstate)
+{
+	return gen_set(cstate, 0x01, gen_load_a(cstate, OR_PREVMPLSHDR, 2, BPF_B));
+}
+
+/*
  * Generate a check for IPv4 or IPv6 for MPLS-encapsulated packets;
  * test the bottom-of-stack bit, and then check the version number
  * field in the IP header.
@@ -5122,20 +5150,20 @@ gen_mpls_linktype(compiler_state_t *cstate, bpf_u_int32 ll_proto)
 {
 	struct block *b0, *b1;
 
+	/*
+	 * In this context the to-be-confirmed IPv4/IPv6 header begins at the
+	 * link-layer payload.
+	 */
 	switch (ll_proto) {
 
 	case ETHERTYPE_IP:
-		/* match the bottom-of-stack bit */
-		b0 = gen_mcmp(cstate, OR_LINKPL, (u_int)-2, BPF_B, 0x01, 0x01);
-		/* match the IPv4 version number */
-		b1 = gen_mcmp(cstate, OR_LINKPL, 0, BPF_B, 0x40, 0xf0);
+		b0 = gen_just_after_mpls_stack(cstate);
+		b1 = gen_ip_version(cstate, OR_LINKPL, 4);
 		return gen_and(b0, b1);
 
 	case ETHERTYPE_IPV6:
-		/* match the bottom-of-stack bit */
-		b0 = gen_mcmp(cstate, OR_LINKPL, (u_int)-2, BPF_B, 0x01, 0x01);
-		/* match the IPv6 version number */
-		b1 = gen_mcmp(cstate, OR_LINKPL, 0, BPF_B, 0x60, 0xf0);
+		b0 = gen_just_after_mpls_stack(cstate);
+		b1 = gen_ip_version(cstate, OR_LINKPL, 6);
 		return gen_and(b0, b1);
 
 	default:
@@ -8750,8 +8778,8 @@ gen_vlan_patch_vid_test(compiler_state_t *cstate, struct block *b_vid)
  * extensions.  Even if kernel supports VLAN BPF extensions, (outermost) VLAN
  * tag can be either in metadata or in packet data; therefore if the
  * SKF_AD_VLAN_TAG_PRESENT test is negative, we need to check link
- * header for VLAN tag. As the decision is done at run time, we need
- * update variable part of the offsets
+ * header for VLAN tag.  As the decision is done at run time, we need to
+ * update variable part of the offsets.
  */
 static struct block *
 gen_vlan_bpf_extensions(compiler_state_t *cstate, bpf_u_int32 vlan_num,
@@ -8921,8 +8949,7 @@ gen_mpls_internal(compiler_state_t *cstate, bpf_u_int32 label_num,
 	struct	block	*b0, *b1;
 
 	if (cstate->label_stack_depth > 0) {
-		/* just match the bottom-of-stack bit clear */
-		b0 = gen_mcmp(cstate, OR_PREVMPLSHDR, 2, BPF_B, 0, 0x01);
+		b0 = gen_not(gen_just_after_mpls_stack(cstate));
 	} else {
 		/*
 		 * We're not in an MPLS stack yet, so check the link-layer
@@ -8956,10 +8983,10 @@ gen_mpls_internal(compiler_state_t *cstate, bpf_u_int32 label_num,
 
 	/* If a specific MPLS label is requested, check it */
 	if (has_label_num) {
-		assert_maxval(cstate, "MPLS label", label_num, 0xFFFFF);
-		label_num = label_num << 12; /* label is shifted 12 bits on the wire */
-		b1 = gen_mcmp(cstate, OR_LINKPL, 0, BPF_W, label_num,
-		    0xfffff000); /* only compare the first 20 bits */
+		assert_maxval(cstate, "MPLS label", label_num, MPLS_LABEL_MAX);
+		b1 = gen_mcmp(cstate, OR_LINKPL, 0, BPF_W,
+		    label_num << MPLS_LABEL_SHIFT,
+		    MPLS_LABEL_MAX << MPLS_LABEL_SHIFT);
 		b0 = gen_and(b0, b1);
 	}
 
@@ -8977,8 +9004,8 @@ gen_mpls_internal(compiler_state_t *cstate, bpf_u_int32 label_num,
 	 *
 	 * XXX - this is a bit of a kludge.  See comments in gen_vlan().
 	 */
-	cstate->off_nl_nosnap += 4;
-	cstate->off_nl += 4;
+	cstate->off_nl_nosnap += MPLS_STACKENTRY_LEN;
+	cstate->off_nl += MPLS_STACKENTRY_LEN;
 	cstate->label_stack_depth++;
 	return (b0);
 }

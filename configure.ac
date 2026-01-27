@@ -136,7 +136,6 @@ AC_CHECK_SIZEOF([time_t],,[#include <time.h>])
 
 AC_LBL_C_INIT(V_CCOPT, V_INCLS)
 AC_LBL_SHLIBS_INIT
-AC_PCAP_C___ATOMICS
 
 #
 # Check whether the platform for which we're compiling requires extra
@@ -864,8 +863,6 @@ if test -z "$V_PCAP"; then
 
 	if test "$ac_cv_lbl_bpf_h_defines_biocsetif" = yes; then
 		V_PCAP=bpf
-		# pcap-bpf.c needs this header for zero-copy BPF support.
-		AC_CHECK_HEADERS([machine/atomic.h])
 	fi
 fi
 
@@ -1163,6 +1160,11 @@ linux)
 
 	# This check is for TESTrun purposes, not for the C code.
 	AC_CHECK_DECLS([SKF_AD_VLAN_TAG_PRESENT], [], [], [[#include <linux/filter.h>]])
+
+	#
+	# For the memory-mapped capture code in pcap-linux.c only.
+	#
+	AC_PCAP_C___ATOMICS
 	;;
 
 bpf)
@@ -1209,6 +1211,11 @@ bpf)
 			AC_MSG_RESULT(no)
 		fi
 	fi
+
+	#
+	# For the conditional zero-copy BPF support in pcap-bpf.c only.
+	#
+	AC_CHECK_HEADERS([machine/atomic.h])
 	;;
 
 hurd)
