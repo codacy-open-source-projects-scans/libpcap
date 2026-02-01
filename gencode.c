@@ -739,11 +739,13 @@ static struct block *gen_portrangeatom(compiler_state_t *, u_int, uint16_t,
 static struct block *gen_portatom6(compiler_state_t *, int, uint16_t);
 static struct block *gen_portrangeatom6(compiler_state_t *, u_int, uint16_t,
     uint16_t);
-static struct block *gen_port(compiler_state_t *, uint16_t, int, int);
+static struct block *gen_port(compiler_state_t *, const uint16_t, const int,
+    const u_char, const u_char);
 static struct block *gen_port_common(compiler_state_t *, int, struct block *);
 static struct block *gen_portrange(compiler_state_t *, uint16_t, uint16_t,
     int, int);
-static struct block *gen_port6(compiler_state_t *, uint16_t, int, int);
+static struct block *gen_port6(compiler_state_t *, const uint16_t, const int,
+    const u_char, const u_char);
 static struct block *gen_port6_common(compiler_state_t *, int, struct block *);
 static struct block *gen_portrange6(compiler_state_t *, uint16_t, uint16_t,
     int, int);
@@ -5899,7 +5901,8 @@ gen_portatom6(compiler_state_t *cstate, int off, uint16_t v)
 }
 
 static struct block *
-gen_port(compiler_state_t *cstate, uint16_t port, int proto, int dir)
+gen_port(compiler_state_t *cstate, const uint16_t port, const int proto,
+    const u_char dir, const u_char addr)
 {
 	struct block *b1, *tmp;
 
@@ -5926,7 +5929,7 @@ gen_port(compiler_state_t *cstate, uint16_t port, int proto, int dir)
 		break;
 
 	default:
-		bpf_error(cstate, ERRSTR_INVALID_QUAL, dqkw(dir), "port");
+		bpf_error(cstate, ERRSTR_INVALID_QUAL, dqkw(dir), tqkw(addr));
 		/*NOTREACHED*/
 	}
 
@@ -5991,7 +5994,8 @@ gen_port_common(compiler_state_t *cstate, int proto, struct block *b1)
 }
 
 static struct block *
-gen_port6(compiler_state_t *cstate, uint16_t port, int proto, int dir)
+gen_port6(compiler_state_t *cstate, const uint16_t port, const int proto,
+    const u_char dir, const u_char addr)
 {
 	struct block *b1, *tmp;
 
@@ -6018,7 +6022,7 @@ gen_port6(compiler_state_t *cstate, uint16_t port, int proto, int dir)
 		break;
 
 	default:
-		bpf_error(cstate, ERRSTR_INVALID_QUAL, dqkw(dir), "port");
+		bpf_error(cstate, ERRSTR_INVALID_QUAL, dqkw(dir), tqkw(addr));
 		/*NOTREACHED*/
 	}
 
@@ -6078,23 +6082,23 @@ gen_portrange(compiler_state_t *cstate, uint16_t port1, uint16_t port2,
 
 	switch (dir) {
 	case Q_SRC:
-		b1 = gen_portrangeatom(cstate, 0, port1, port2);
+		b1 = gen_portrangeatom(cstate, TRAN_SRCPORT_OFFSET, port1, port2);
 		break;
 
 	case Q_DST:
-		b1 = gen_portrangeatom(cstate, 2, port1, port2);
+		b1 = gen_portrangeatom(cstate, TRAN_DSTPORT_OFFSET, port1, port2);
 		break;
 
 	case Q_AND:
-		tmp = gen_portrangeatom(cstate, 0, port1, port2);
-		b1 = gen_portrangeatom(cstate, 2, port1, port2);
+		tmp = gen_portrangeatom(cstate, TRAN_SRCPORT_OFFSET, port1, port2);
+		b1 = gen_portrangeatom(cstate, TRAN_DSTPORT_OFFSET, port1, port2);
 		b1 = gen_and(tmp, b1);
 		break;
 
 	case Q_DEFAULT:
 	case Q_OR:
-		tmp = gen_portrangeatom(cstate, 0, port1, port2);
-		b1 = gen_portrangeatom(cstate, 2, port1, port2);
+		tmp = gen_portrangeatom(cstate, TRAN_SRCPORT_OFFSET, port1, port2);
+		b1 = gen_portrangeatom(cstate, TRAN_DSTPORT_OFFSET, port1, port2);
 		b1 = gen_or(tmp, b1);
 		break;
 
@@ -6129,23 +6133,23 @@ gen_portrange6(compiler_state_t *cstate, uint16_t port1, uint16_t port2,
 
 	switch (dir) {
 	case Q_SRC:
-		b1 = gen_portrangeatom6(cstate, 0, port1, port2);
+		b1 = gen_portrangeatom6(cstate, TRAN_SRCPORT_OFFSET, port1, port2);
 		break;
 
 	case Q_DST:
-		b1 = gen_portrangeatom6(cstate, 2, port1, port2);
+		b1 = gen_portrangeatom6(cstate, TRAN_DSTPORT_OFFSET, port1, port2);
 		break;
 
 	case Q_AND:
-		tmp = gen_portrangeatom6(cstate, 0, port1, port2);
-		b1 = gen_portrangeatom6(cstate, 2, port1, port2);
+		tmp = gen_portrangeatom6(cstate, TRAN_SRCPORT_OFFSET, port1, port2);
+		b1 = gen_portrangeatom6(cstate, TRAN_DSTPORT_OFFSET, port1, port2);
 		b1 = gen_and(tmp, b1);
 		break;
 
 	case Q_DEFAULT:
 	case Q_OR:
-		tmp = gen_portrangeatom6(cstate, 0, port1, port2);
-		b1 = gen_portrangeatom6(cstate, 2, port1, port2);
+		tmp = gen_portrangeatom6(cstate, TRAN_SRCPORT_OFFSET, port1, port2);
+		b1 = gen_portrangeatom6(cstate, TRAN_DSTPORT_OFFSET, port1, port2);
 		b1 = gen_or(tmp, b1);
 		break;
 
@@ -7010,8 +7014,8 @@ gen_scode(compiler_state_t *cstate, const char *name, struct qual q)
 			bpf_error(cstate, "illegal port number %d > 65535", port);
 
 		// real_proto can be PROTO_UNDEF
-		b = gen_port(cstate, (uint16_t)port, real_proto, dir);
-		b6 = gen_port6(cstate, (uint16_t)port, real_proto, dir);
+		b = gen_port(cstate, (uint16_t)port, real_proto, q.dir, q.addr);
+		b6 = gen_port6(cstate, (uint16_t)port, real_proto, q.dir, q.addr);
 		return gen_or(b6, b);
 
 	case Q_PORTRANGE:
@@ -7057,10 +7061,8 @@ gen_scode(compiler_state_t *cstate, const char *name, struct qual q)
 		 * stringtoport() invocation stoulen() can return any uint32_t
 		 * value if it has accepted the argument.
 		 */
-		if (port1 > 65535)
-			bpf_error(cstate, "illegal port number %d > 65535", port1);
-		if (port2 > 65535)
-			bpf_error(cstate, "illegal port number %d > 65535", port2);
+		assert_maxval(cstate, "port number", port1, UINT16_MAX);
+		assert_maxval(cstate, "port number", port2, UINT16_MAX);
 
 		// real_proto can be PROTO_UNDEF
 		b = gen_portrange(cstate, (uint16_t)port1, (uint16_t)port2,
@@ -7084,7 +7086,7 @@ gen_scode(compiler_state_t *cstate, const char *name, struct qual q)
 		syntax(cstate);
 		/*NOTREACHED*/
 	}
-	bpf_error(cstate, ERRSTR_FUNC_VAR_INT, __func__, "q.addr", q.addr);
+	bpf_error(cstate, ERRSTR_INVALID_QUAL, tqkw(q.addr), name);
 	/*NOTREACHED*/
 }
 
@@ -7119,25 +7121,23 @@ gen_mcode(compiler_state_t *cstate, const char *s1, const char *s2,
 	/* Promote short ipaddr */
 	n <<= 32 - nlen;
 
+	char idstr[PCAP_BUF_SIZE];
 	if (s2 != NULL) {
 		mlen = pcapint_atoin(s2, &m);
 		if (mlen < 0)
 			bpf_error(cstate, ERRSTR_INVALID_IPV4_ADDR, s2);
 		/* Promote short ipaddr */
 		m <<= 32 - mlen;
-		if ((n & ~m) != 0)
-			bpf_error(cstate, "non-network bits set in \"%s mask %s\"",
-			    s1, s2);
+		snprintf(idstr, sizeof(idstr), "%s mask %s", s1, s2);
 	} else {
 		/* Convert mask len to mask */
-		if (masklen > 32)
-			bpf_error(cstate, "mask length must be <= 32");
+		assert_maxval(cstate, "netmask length", masklen, 32);
 		m64 = UINT64_C(0xffffffff) << (32 - masklen);
 		m = (bpf_u_int32)m64;
-		if ((n & ~m) != 0)
-			bpf_error(cstate, "non-network bits set in \"%s/%d\"",
-			    s1, masklen);
+		snprintf(idstr, sizeof(idstr), "%s/%u", s1, masklen);
 	}
+	if ((n & ~m) != 0)
+		bpf_error(cstate, "non-network bits set in \"%s\"", idstr);
 
 	switch (q.addr) {
 
@@ -7147,7 +7147,7 @@ gen_mcode(compiler_state_t *cstate, const char *s1, const char *s2,
 
 	default:
 		// Q_HOST and Q_GATEWAY only (see the grammar)
-		bpf_error(cstate, "Mask syntax for networks only");
+		bpf_error(cstate, ERRSTR_INVALID_QUAL, tqkw(q.addr), idstr);
 		/*NOTREACHED*/
 	}
 	/*NOTREACHED*/
@@ -7158,7 +7158,6 @@ gen_ncode(compiler_state_t *cstate, const char *s, bpf_u_int32 v, struct qual q)
 {
 	bpf_u_int32 mask;
 	int proto;
-	int dir;
 	int vlen;
 
 	/*
@@ -7172,7 +7171,7 @@ gen_ncode(compiler_state_t *cstate, const char *s, bpf_u_int32 v, struct qual q)
 		return gen_dnhost(cstate, s, v, q);
 
 	proto = q.proto;
-	dir = q.dir;
+	char idstr[PCAP_BUF_SIZE];
 	if (s == NULL) {
 		/*
 		 * v contains a 32-bit unsigned parsed from a string of the
@@ -7180,6 +7179,7 @@ gen_ncode(compiler_state_t *cstate, const char *s, bpf_u_int32 v, struct qual q)
 		 * This is a valid IPv4 address, in the sense of inet_aton(3).
 		 */
 		vlen = 32;
+		snprintf(idstr, sizeof(idstr), "%u", v);
 	} else {
 		/*
 		 * s points to a string of the form {N}.{N}, {N}.{N}.{N} or
@@ -7189,6 +7189,7 @@ gen_ncode(compiler_state_t *cstate, const char *s, bpf_u_int32 v, struct qual q)
 		vlen = pcapint_atoin(s, &v);
 		if (vlen < 0)
 			bpf_error(cstate, ERRSTR_INVALID_IPV4_ADDR, s);
+		snprintf(idstr, sizeof(idstr), "%s", s);
 	}
 
 	struct block *b, *b6;
@@ -7198,12 +7199,7 @@ gen_ncode(compiler_state_t *cstate, const char *s, bpf_u_int32 v, struct qual q)
 	case Q_HOST:
 	case Q_NET:
 		if (proto == Q_LINK) {
-			if (s)
-				// "link (host|net) IPV4ADDR" and variations thereof
-				bpf_error(cstate, "illegal link-layer address '%s'", s);
-			else
-				// link host NUMBER
-				bpf_error(cstate, "illegal link-layer address '%u'", v);
+			bpf_error(cstate, "illegal link-layer address '%s'", idstr);
 		} else {
 			mask = 0xffffffff;
 			if (s == NULL && q.addr == Q_NET) {
@@ -7222,35 +7218,17 @@ gen_ncode(compiler_state_t *cstate, const char *s, bpf_u_int32 v, struct qual q)
 			                "host <IPv4 address>");
 		}
 
+	case Q_PORTRANGE: // "portrange <n>" means the same as "port <n>".
 	case Q_PORT:
-		proto = port_pq_to_ipproto(cstate, proto, "port");
+		proto = port_pq_to_ipproto(cstate, proto, tqkw(q.addr));
 
 		// This check is necessary: v can hold any uint32_t value.
-		if (v > 65535)
-			bpf_error(cstate, "illegal port number %u > 65535", v);
+		assert_maxval(cstate, "port number", v, UINT16_MAX);
 
 		// proto can be PROTO_UNDEF
-		b = gen_port(cstate, (uint16_t)v, proto, dir);
-		b6 = gen_port6(cstate, (uint16_t)v, proto, dir);
+		b = gen_port(cstate, (uint16_t)v, proto, q.dir, q.addr);
+		b6 = gen_port6(cstate, (uint16_t)v, proto, q.dir, q.addr);
 		return gen_or(b6, b);
-
-	case Q_PORTRANGE:
-		proto = port_pq_to_ipproto(cstate, proto, "portrange");
-
-		// This check is necessary: v can hold any uint32_t value.
-		if (v > 65535)
-			bpf_error(cstate, "illegal port number %u > 65535", v);
-
-		// proto can be PROTO_UNDEF
-		b = gen_portrange(cstate, (uint16_t)v, (uint16_t)v,
-		    proto, dir);
-		b6 = gen_portrange6(cstate, (uint16_t)v, (uint16_t)v,
-		    proto, dir);
-		return gen_or(b6, b);
-
-	case Q_GATEWAY:
-		bpf_error(cstate, "'gateway' requires a name");
-		/*NOTREACHED*/
 
 	case Q_PROTO:
 		return gen_proto(cstate, v, proto);
@@ -7265,7 +7243,7 @@ gen_ncode(compiler_state_t *cstate, const char *s, bpf_u_int32 v, struct qual q)
 		/*NOTREACHED*/
 
 	default:
-		bpf_error(cstate, ERRSTR_FUNC_VAR_INT, __func__, "q.addr", q.addr);
+		bpf_error(cstate, ERRSTR_INVALID_QUAL, tqkw(q.addr), idstr);
 		/*NOTREACHED*/
 	}
 	/*NOTREACHED*/
@@ -9112,12 +9090,12 @@ gen_pppoes(compiler_state_t *cstate, bpf_u_int32 sess_num, int has_sess_num)
  * specified. Parameterized to handle both IPv4 and IPv6. */
 static struct block *
 gen_geneve_check(compiler_state_t *cstate,
-    struct block *(*gen_portfn)(compiler_state_t *, uint16_t, int, int),
+    struct block *(*gen_portfn)(compiler_state_t *, const uint16_t, const int, const u_char, const u_char),
     enum e_offrel offrel, bpf_u_int32 vni, int has_vni)
 {
 	struct block *b0, *b1;
 
-	b0 = gen_portfn(cstate, GENEVE_PORT, IPPROTO_UDP, Q_DST);
+	b0 = gen_portfn(cstate, GENEVE_PORT, IPPROTO_UDP, Q_DST, Q_PORT);
 
 	/* Check that we are operating on version 0. Otherwise, we
 	 * can't decode the rest of the fields. The version is 2 bits
@@ -9366,12 +9344,12 @@ gen_geneve(compiler_state_t *cstate, bpf_u_int32 vni, int has_vni)
  * specified. Parameterized to handle both IPv4 and IPv6. */
 static struct block *
 gen_vxlan_check(compiler_state_t *cstate,
-    struct block *(*gen_portfn)(compiler_state_t *, uint16_t, int, int),
+    struct block *(*gen_portfn)(compiler_state_t *, const uint16_t, const int, const u_char, const u_char),
     enum e_offrel offrel, bpf_u_int32 vni, int has_vni)
 {
 	struct block *b0, *b1;
 
-	b0 = gen_portfn(cstate, VXLAN_PORT, IPPROTO_UDP, Q_DST);
+	b0 = gen_portfn(cstate, VXLAN_PORT, IPPROTO_UDP, Q_DST, Q_PORT);
 
 	/* Check that the VXLAN header has the flag bits set
 	 * correctly. */
