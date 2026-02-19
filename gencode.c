@@ -118,19 +118,46 @@ struct addrinfo {
 #define ETHERMTU	1500
 
 #ifndef IPPROTO_HOPOPTS
-#define IPPROTO_HOPOPTS 0
+#define IPPROTO_HOPOPTS    0
+#endif
+#ifndef IPPROTO_IGMP
+#define IPPROTO_IGMP       2
+#endif
+#ifndef IPPROTO_IGRP
+#define IPPROTO_IGRP       9
 #endif
 #ifndef IPPROTO_ROUTING
-#define IPPROTO_ROUTING 43
+#define IPPROTO_ROUTING   43
 #endif
 #ifndef IPPROTO_FRAGMENT
-#define IPPROTO_FRAGMENT 44
+#define IPPROTO_FRAGMENT  44
+#endif
+#ifndef IPPROTO_ESP
+#define IPPROTO_ESP       50
+#endif
+#ifndef IPPROTO_AH
+#define IPPROTO_AH        51
+#endif
+#ifndef IPPROTO_ICMPV6
+#define IPPROTO_ICMPV6    58
+#endif
+#ifndef IPPROTO_NONE
+#define IPPROTO_NONE      59
 #endif
 #ifndef IPPROTO_DSTOPTS
-#define IPPROTO_DSTOPTS 60
+#define IPPROTO_DSTOPTS   60
+#endif
+#ifndef IPPROTO_PIM
+#define IPPROTO_PIM      103
+#endif
+#ifndef IPPROTO_CARP
+#define IPPROTO_CARP     112
+#endif
+#ifndef IPPROTO_VRRP
+#define IPPROTO_VRRP     112
 #endif
 #ifndef IPPROTO_SCTP
-#define IPPROTO_SCTP 132
+#define IPPROTO_SCTP     132
 #endif
 
 #define GENEVE_PORT 6081
@@ -272,11 +299,13 @@ struct addrinfo {
 #define SLIPDIR_OUT 1
 
 /*
- * Offsets of various L3 addresses from the beginning of their network-layer
+ * Offsets of various fields from the beginning of their network-layer
  * header, which is the link-layer payload (OR_LINKPL).
  */
+#define IPV6_PROTO_OFFSET    6
 #define IPV6_SRCADDR_OFFSET  8
 #define IPV6_DSTADDR_OFFSET 24
+#define IPV4_PROTO_OFFSET    9
 #define IPV4_SRCADDR_OFFSET 12
 #define IPV4_DSTADDR_OFFSET 16
 #define ARP_SRCADDR_OFFSET  14
@@ -5682,36 +5711,17 @@ gen_proto_abbrev_internal(compiler_state_t *cstate, int proto)
 	case Q_ICMP:
 		return gen_proto(cstate, IPPROTO_ICMP, Q_IP);
 
-#ifndef	IPPROTO_IGMP
-#define	IPPROTO_IGMP	2
-#endif
-
 	case Q_IGMP:
 		return gen_proto(cstate, IPPROTO_IGMP, Q_IP);
 
-#ifndef	IPPROTO_IGRP
-#define	IPPROTO_IGRP	9
-#endif
 	case Q_IGRP:
 		return gen_proto(cstate, IPPROTO_IGRP, Q_IP);
-
-#ifndef IPPROTO_PIM
-#define IPPROTO_PIM	103
-#endif
 
 	case Q_PIM:
 		return gen_proto(cstate, IPPROTO_PIM, Q_DEFAULT);
 
-#ifndef IPPROTO_VRRP
-#define IPPROTO_VRRP	112
-#endif
-
 	case Q_VRRP:
 		return gen_proto(cstate, IPPROTO_VRRP, Q_IP);
-
-#ifndef IPPROTO_CARP
-#define IPPROTO_CARP	112
-#endif
 
 	case Q_CARP:
 		return gen_proto(cstate, IPPROTO_CARP, Q_IP);
@@ -5749,21 +5759,12 @@ gen_proto_abbrev_internal(compiler_state_t *cstate, int proto)
 	case Q_IPV6:
 		return gen_linktype(cstate, ETHERTYPE_IPV6);
 
-#ifndef IPPROTO_ICMPV6
-#define IPPROTO_ICMPV6	58
-#endif
 	case Q_ICMPV6:
 		return gen_proto(cstate, IPPROTO_ICMPV6, Q_IPV6);
 
-#ifndef IPPROTO_AH
-#define IPPROTO_AH	51
-#endif
 	case Q_AH:
 		return gen_proto(cstate, IPPROTO_AH, Q_DEFAULT);
 
-#ifndef IPPROTO_ESP
-#define IPPROTO_ESP	50
-#endif
 	case Q_ESP:
 		return gen_proto(cstate, IPPROTO_ESP, Q_DEFAULT);
 
@@ -5860,13 +5861,13 @@ gen_proto_abbrev(compiler_state_t *cstate, int proto)
 static struct block *
 gen_ip_proto(compiler_state_t *cstate, const uint8_t proto)
 {
-	return gen_cmp(cstate, OR_LINKPL, 9, BPF_B, proto);
+	return gen_cmp(cstate, OR_LINKPL, IPV4_PROTO_OFFSET, BPF_B, proto);
 }
 
 static struct block *
 gen_ip6_proto(compiler_state_t *cstate, const uint8_t proto)
 {
-	return gen_cmp(cstate, OR_LINKPL, 6, BPF_B, proto);
+	return gen_cmp(cstate, OR_LINKPL, IPV6_PROTO_OFFSET, BPF_B, proto);
 }
 
 static struct block *
@@ -6294,7 +6295,7 @@ gen_protochain(compiler_state_t *cstate, bpf_u_int32 v, int proto)
 		b0 = gen_linktype(cstate, ETHERTYPE_IP);
 
 		/* A = ip->ip_p */
-		s[i] = gen_load_a(cstate, OR_LINKPL, 9, BPF_B);
+		s[i] = gen_load_a(cstate, OR_LINKPL, IPV4_PROTO_OFFSET, BPF_B);
 		i++;
 		/* X = ip->ip_hl << 2 */
 		s[i] = gen_loadx_iphdrlen(cstate);
@@ -6305,7 +6306,7 @@ gen_protochain(compiler_state_t *cstate, bpf_u_int32 v, int proto)
 		b0 = gen_linktype(cstate, ETHERTYPE_IPV6);
 
 		/* A = ip6->ip_nxt */
-		s[i] = gen_load_a(cstate, OR_LINKPL, 6, BPF_B);
+		s[i] = gen_load_a(cstate, OR_LINKPL, IPV6_PROTO_OFFSET, BPF_B);
 		i++;
 		/* X = sizeof(struct ip6_hdr) */
 		s[i] = new_stmt(cstate, BPF_LDX|BPF_IMM);
@@ -6327,9 +6328,6 @@ gen_protochain(compiler_state_t *cstate, bpf_u_int32 v, int proto)
 	fix5 = i;
 	i++;
 
-#ifndef IPPROTO_NONE
-#define IPPROTO_NONE	59
-#endif
 	/* if (A == IPPROTO_NONE) goto end */
 	s[i] = new_stmt(cstate, JMP(BPF_JEQ, BPF_K));
 	s[i]->s.jt = NULL;	/*later*/
@@ -7427,11 +7425,11 @@ xfer_to_a(compiler_state_t *cstate, struct arth *a)
 }
 
 /*
- * Modify "index" to use the value stored into its register as an
+ * Modify "inst" to use the value stored into its register as an
  * offset relative to the beginning of the header for the protocol
  * "proto", and allocate a register and put an item "size" bytes long
  * (1, 2, or 4) at that offset into that register, making it the register
- * for "index".
+ * for "inst".
  */
 static struct arth *
 gen_load_internal(compiler_state_t *cstate, int proto, struct arth *inst,
@@ -7467,6 +7465,8 @@ gen_load_internal(compiler_state_t *cstate, int proto, struct arth *inst,
 
 	case Q_RADIO:
 		/*
+		 * This corresponds to OR_PACKET in gen_load_a().
+		 *
 		 * The offset is relative to the beginning of the packet
 		 * data, if we have a radio header.  (If we don't, this
 		 * is an error.)
@@ -7478,7 +7478,7 @@ gen_load_internal(compiler_state_t *cstate, int proto, struct arth *inst,
 
 		/*
 		 * Load into the X register the offset computed into the
-		 * register specified by "index".
+		 * register specified by "inst".
 		 */
 		s = xfer_to_x(cstate, inst);
 
@@ -7492,10 +7492,12 @@ gen_load_internal(compiler_state_t *cstate, int proto, struct arth *inst,
 
 	case Q_LINK:
 		/*
+		 * This corresponds to OR_LINKHDR in gen_load_a().
+		 *
 		 * The offset is relative to the beginning of
 		 * the link-layer header.
 		 *
-		 * XXX - what about ATM LANE?  Should the index be
+		 * XXX - what about ATM LANE?  Should "inst" be
 		 * relative to the beginning of the AAL5 frame, so
 		 * that 0 refers to the beginning of the LE Control
 		 * field, or relative to the beginning of the LAN
@@ -7508,10 +7510,10 @@ gen_load_internal(compiler_state_t *cstate, int proto, struct arth *inst,
 		 * If "s" is non-null, it has code to arrange that the
 		 * X register contains the length of the prefix preceding
 		 * the link-layer header.  Add to it the offset computed
-		 * into the register specified by "index", and move that
+		 * into the register specified by "inst", and move that
 		 * into the X register.  Otherwise, just load into the X
 		 * register the offset computed into the register specified
-		 * by "index".
+		 * by "inst".
 		 */
 		if (s != NULL) {
 			sappend(s, xfer_to_a(cstate, inst));
@@ -7525,7 +7527,7 @@ gen_load_internal(compiler_state_t *cstate, int proto, struct arth *inst,
 		 * X register and the offset of the start of the link
 		 * layer header (which is 0 if the radio header is
 		 * variable-length; that header length is what we put
-		 * into the X register and then added to the index).
+		 * into the X register and then added to "inst").
 		 */
 		tmp = new_stmt(cstate, BPF_LD|BPF_IND|size_code);
 		tmp->s.k = cstate->off_linkhdr.constant_part;
@@ -7544,6 +7546,8 @@ gen_load_internal(compiler_state_t *cstate, int proto, struct arth *inst,
 	case Q_MOPDL:
 	case Q_IPV6:
 		/*
+		 * This corresponds to OR_LINKPL in gen_load_a().
+		 *
 		 * The offset is relative to the beginning of
 		 * the network-layer header.
 		 * XXX - are there any cases where we want
@@ -7555,10 +7559,10 @@ gen_load_internal(compiler_state_t *cstate, int proto, struct arth *inst,
 		 * If "s" is non-null, it has code to arrange that the
 		 * X register contains the variable part of the offset
 		 * of the link-layer payload.  Add to it the offset
-		 * computed into the register specified by "index",
+		 * computed into the register specified by "inst",
 		 * and move that into the X register.  Otherwise, just
 		 * load into the X register the offset computed into
-		 * the register specified by "index".
+		 * the register specified by "inst".
 		 */
 		if (s != NULL) {
 			sappend(s, xfer_to_a(cstate, inst));
@@ -7599,6 +7603,8 @@ gen_load_internal(compiler_state_t *cstate, int proto, struct arth *inst,
 	case Q_VRRP:
 	case Q_CARP:
 		/*
+		 * This corresponds to OR_TRAN_IPV4 in gen_load_a().
+		 *
 		 * The offset is relative to the beginning of
 		 * the transport-layer header.
 		 *
@@ -7649,6 +7655,8 @@ gen_load_internal(compiler_state_t *cstate, int proto, struct arth *inst,
 		break;
 	case Q_ICMPV6:
 		/*
+		 * This corresponds to OR_TRAN_IPV6 in gen_load_a().
+		 *
 		 * Do the computation only if the packet contains
 		 * the protocol in question.
 		 */
@@ -7666,10 +7674,10 @@ gen_load_internal(compiler_state_t *cstate, int proto, struct arth *inst,
 		 * If "s" is non-null, it has code to arrange that the
 		 * X register contains the variable part of the offset
 		 * of the link-layer payload.  Add to it the offset
-		 * computed into the register specified by "index",
+		 * computed into the register specified by "inst",
 		 * and move that into the X register.  Otherwise, just
 		 * load into the X register the offset computed into
-		 * the register specified by "index".
+		 * the register specified by "inst".
 		 */
 		if (s != NULL) {
 			sappend(s, xfer_to_a(cstate, inst));
@@ -8076,8 +8084,10 @@ gen_broadcast(compiler_state_t *cstate, int proto)
 			bpf_error(cstate, "netmask not known, so 'ip broadcast' not supported");
 		b0 = gen_linktype(cstate, ETHERTYPE_IP);
 		hostmask = ~cstate->netmask;
-		b1 = gen_mcmp(cstate, OR_LINKPL, 16, BPF_W, 0, hostmask);
-		b2 = gen_mcmp(cstate, OR_LINKPL, 16, BPF_W, hostmask, hostmask);
+		b1 = gen_mcmp(cstate, OR_LINKPL, IPV4_DSTADDR_OFFSET, BPF_W,
+		    0, hostmask);
+		b2 = gen_mcmp(cstate, OR_LINKPL, IPV4_DSTADDR_OFFSET, BPF_W,
+		    hostmask, hostmask);
 		return gen_and(b0, gen_or(b1, b2));
 	}
 	bpf_error(cstate, ERRSTR_INVALID_QUAL, pqkw(proto), "broadcast");
@@ -8257,13 +8267,14 @@ gen_multicast(compiler_state_t *cstate, int proto)
 		/*
 		 * Compare address with 224.0.0.0/4
 		 */
-		b1 = gen_mcmp(cstate, OR_LINKPL, 16, BPF_B, 0xe0, 0xf0);
+		b1 = gen_mcmp(cstate, OR_LINKPL, IPV4_DSTADDR_OFFSET, BPF_B,
+		    0xe0, 0xf0);
 
 		return gen_and(b0, b1);
 
 	case Q_IPV6:
 		b0 = gen_linktype(cstate, ETHERTYPE_IPV6);
-		b1 = gen_cmp(cstate, OR_LINKPL, 24, BPF_B, 255);
+		b1 = gen_cmp(cstate, OR_LINKPL, IPV6_DSTADDR_OFFSET, BPF_B, 255);
 		return gen_and(b0, b1);
 	}
 	bpf_error(cstate, ERRSTR_INVALID_QUAL, pqkw(proto), "multicast");
