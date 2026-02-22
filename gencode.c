@@ -1644,14 +1644,22 @@ gen_bcmp(compiler_state_t *cstate, enum e_offrel offrel, u_int offset,
 	struct block *b, *tmp;
 
 	b = NULL;
+	/*
+	 * If everything everywhere always goes right, the initial value of
+	 * 'size' is greater than zero, this check is dead code and 'b' will
+	 * not remain NULL.  However, various code that calls this function
+	 * does not check for a NULL return value, so just in case something
+	 * goes wrong somewhere else fail safely here instead of causing a NULL
+	 * dereference upon return.
+	 */
+	if (! size)
+		bpf_error(cstate, ERRSTR_FUNC_VAR_INT, __func__, "size", size);
 	while (size >= 4) {
 		const u_char *p = &v[size - 4];
 
 		tmp = gen_cmp(cstate, offrel, offset + size - 4, BPF_W,
 		    EXTRACT_BE_U_4(p));
-		if (b != NULL)
-			tmp = gen_and(b, tmp);
-		b = tmp;
+		b = b ? gen_and(b, tmp) : tmp;
 		size -= 4;
 	}
 	while (size >= 2) {
@@ -1659,16 +1667,12 @@ gen_bcmp(compiler_state_t *cstate, enum e_offrel offrel, u_int offset,
 
 		tmp = gen_cmp(cstate, offrel, offset + size - 2, BPF_H,
 		    EXTRACT_BE_U_2(p));
-		if (b != NULL)
-			tmp = gen_and(b, tmp);
-		b = tmp;
+		b = b ? gen_and(b, tmp) : tmp;
 		size -= 2;
 	}
 	if (size > 0) {
 		tmp = gen_cmp(cstate, offrel, offset, BPF_B, v[0]);
-		if (b != NULL)
-			tmp = gen_and(b, tmp);
-		b = tmp;
+		b = b ? gen_and(b, tmp) : tmp;
 	}
 	return b;
 }
@@ -7729,7 +7733,7 @@ gen_relation_internal(compiler_state_t *cstate, int code, struct arth *a0,
     struct arth *a1, int reversed)
 {
 	struct slist *s0, *s1;
-	struct block *b, *tmp;
+	struct block *b;
 
 	s0 = xfer_to_x(cstate, a1);
 	s1 = xfer_to_a(cstate, a0);
@@ -7745,12 +7749,11 @@ gen_relation_internal(compiler_state_t *cstate, int code, struct arth *a0,
 	free_reg(cstate, a1->regno);
 
 	/* 'and' together protocol checks */
-	if (a0->b) {
-		tmp = a1->b ? gen_and(a0->b, a1->b) : a0->b;
-	} else
-		tmp = a1->b;
-
-	return tmp ? gen_and(tmp, b) : b;
+	if (a0->b)
+		b = gen_and(a0->b, b);
+	if (a1->b)
+		b = gen_and(a1->b, b);
+	return b;
 }
 
 struct block *
