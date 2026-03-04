@@ -501,14 +501,10 @@ endif()
 set(PCAP_TYPE "" CACHE STRING "Packet capture type")
 
 #
-# Default to having remote capture support on Windows and, for now, to
-# not having it on UN*X.
+# Disable remote capture support by default.
+# This feature is experimental and is not ready for production use.
 #
-if(WIN32)
-    option(ENABLE_REMOTE "Enable remote capture" ON)
-else()
-    option(ENABLE_REMOTE "Enable remote capture" OFF)
-endif(WIN32)
+option(ENABLE_REMOTE "Enable remote capture" OFF)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     option(BUILD_WITH_LIBNL "Build with libnl" ON)
@@ -2847,6 +2843,12 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/.devel OR EXISTS ${CMAKE_BINARY_DIR}/.deve
         # XXX - add /Qspectre if that is really worth doing.
         #
         check_and_add_compiler_option(-wd5045)
+        #
+        # Suppress warning C4204 from MSVC
+        # "nonstandard extension used: non-constant aggregate initializer"
+        # with code that returns a compound literal. This is allowed by C99.
+        #
+        check_and_add_compiler_option(-wd4204)
 
         #
         # Treat all (remaining) warnings as errors.
@@ -3678,4 +3680,13 @@ if(PERL)
     add_custom_target(check
         COMMAND ${PERL} ${CMAKE_SOURCE_DIR}/testprogs/TESTrun
         DEPENDS testprogs)
+endif()
+
+if(ENABLE_REMOTE)
+  message(WARNING "
+  ***  REMOTE PACKET CAPTURE IS ENABLED  ***
+  The ENABLE_REMOTE feature is experimental and is not ready for
+  production use. Remote packet capture may expose libpcap-based
+  applications to attacks by malicious remote capture servers!"
+  )
 endif()
