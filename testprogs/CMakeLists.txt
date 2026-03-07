@@ -62,10 +62,15 @@ if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD" OR
   add_test_executable(valgrindtest)
 endif()
 
-if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD" OR
-   CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR
-   CMAKE_SYSTEM_NAME STREQUAL "Linux")
+#
+# This requires unistd.h.
+#
+if(HAVE_UNISTD_H)
+  #
+  # We don't distribute the fuzz tests in the release tarball,
+  # so only attempt to build them if we're in a Git repository.
+  #
   if(IS_DIRECTORY ${CMAKE_HOME_DIRECTORY}/.git)
-     add_subdirectory(fuzz)
+    add_subdirectory(fuzz)
   endif(IS_DIRECTORY ${CMAKE_HOME_DIRECTORY}/.git)
-endif()
+endif(HAVE_UNISTD_H)
