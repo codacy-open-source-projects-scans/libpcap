@@ -54,6 +54,9 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
       In "gateway" negate the host(s), but not the protocol.
       Reject "gateway" within MPLS, VXLAN or Geneve.
       In "net <n> mask <m>" catch ENOMEM for the "m" too.
+      Match both byte orders for the AF_ value when filtering DLT_NULL
+        and DLT_ENC savefiles. (issue #74)
+      Match all AF_INET6 values when filtering DLT_PFLOG savefiles.
     Capture file reading:
       Fix misaligned accesses in processing Linux USB captures (issue
         #1634, reported by FuzzAnything Organization
@@ -159,6 +162,20 @@ DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
     QNX:
       Disable zero-copy BPF to work around portability issues.
       Use "unix.h" instead of the missing <sysexits.h>.
+
+DayOfTheWeek, Month DD, YYYY / The Tcpdump Group
+  Summary for 1.10.7 libpcap release (so far!)
+    General:
+      Free p->opt.device on close, not on cleanup (issue #1615). Issue
+        reported by Harrison Green.
+    Source code:
+      Deprecate bpf_filter().
+    Documentation:
+      Remove list of OSes that support "ipv6-icmp"; all the ones we
+        support appear to do so.
+    Building and testing:
+      CMake: Disable remote capture support on Windows by default.
+      RDMA: Avoid valgrind errors when calling rdmasniff_findalldevs().
 
 Tuesday, December 30, 2025 / The Tcpdump Group
   Summary for 1.10.6 libpcap release
