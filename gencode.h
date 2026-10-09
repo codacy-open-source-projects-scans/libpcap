@@ -286,6 +286,7 @@ struct block {
  * A value of 0 for val[i] means the value is unknown.
  */
 #define VAL_UNKNOWN	0
+#define IS_KNOWN(block, atom) ((block)->val[(atom)] != VAL_UNKNOWN)
 
 struct arth {
 	struct block *b;	/* protocol checks */
@@ -438,5 +439,9 @@ int pcap_parse(void *, compiler_state_t *);
 /* XXX */
 #define JT(b)  ((b)->et.succ)
 #define JF(b)  ((b)->ef.succ)
+
+#define ERRSTR_DIV_BY_ZERO "division by zero"
+#define ERRSTR_MOD_BY_ZERO "modulo by zero"
+#define ERRSTR_SHIFT_BY_MORE "shift by more than 31 bits"
 
 #endif /* gencode_h */

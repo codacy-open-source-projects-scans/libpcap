@@ -129,6 +129,7 @@ HDR = $(PUBHDR) \
 	ieee80211.h \
 	llc.h \
 	nametoaddr.h \
+	no_sanitize.h \
 	optimize.h \
 	pcap-common.h \
 	pcap-int.h \
@@ -262,7 +263,6 @@ EXTRA_DIST = \
 	cmake_uninstall.cmake.in \
 	cmakeconfig.h.in \
 	cmake/Modules/FindDAG.cmake \
-	cmake/Modules/Finddpdk.cmake \
 	cmake/Modules/FindFseeko.cmake \
 	cmake/Modules/FindLFS.cmake \
 	cmake/Modules/FindPacket.cmake \
@@ -302,8 +302,6 @@ EXTRA_DIST = \
 	pcap-dbus.h \
 	pcap-dll.rc \
 	pcap-dlpi.c \
-	pcap-dpdk.c \
-	pcap-dpdk.h \
 	pcap-haiku.c \
 	pcap-hurd.c \
 	pcap-int.h \
@@ -359,11 +357,13 @@ EXTRA_DIST = \
 	testprogs/activatetest.c \
 	testprogs/can_set_rfmon_test.c \
 	testprogs/capturetest.c \
+	testprogs/enumeratetest.c \
 	testprogs/filtertest.c \
 	testprogs/findalldevstest.c \
 	testprogs/findalldevstest.supp \
 	testprogs/findalldevstest-perf.c \
 	testprogs/nonblocktest.c \
+	testprogs/opendeadtest.c \
 	testprogs/opentest.c \
 	testprogs/reactivatetest.c \
 	testprogs/selpolltest.c \
@@ -766,6 +766,7 @@ distclean: clean
 
 check: testprogs
 	$(PERL) $(srcdir)/testprogs/TESTrun
+	testprogs/opendeadtest EN10MB
 
 extags: $(TAGFILES)
 	ctags $(TAGFILES)
@@ -827,7 +828,7 @@ releasecheck: releasetar
 	cd /tmp && \
 	rm -rf "$$TAG" && \
 	rm -rf "$$INSTALL_DIR" && \
-	tar xf "$$DIR"/"$$TAG".tar.gz && \
+	tar xzf "$$DIR"/"$$TAG".tar.gz && \
 	cd "$$TAG" && \
 	echo "[$@] $$ touch .devel" && \
 	touch .devel && \
@@ -842,7 +843,7 @@ releasecheck: releasetar
 	cd .. && \
 	rm -rf "$$TAG" && \
 	rm -rf "$$INSTALL_DIR" && \
-	tar xf "$$DIR"/"$$TAG".tar.gz && \
+	tar xzf "$$DIR"/"$$TAG".tar.gz && \
 	cd "$$TAG" && \
 	echo "[$@] $$ touch .devel" && \
 	touch .devel && \

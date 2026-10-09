@@ -1,5 +1,7 @@
 /* cmakeconfig.h.in */
 
+#define LIBPCAP_CONFIG_H
+
 /* Define to 1 if arpa/inet.h declares `ether_hostton' */
 #cmakedefine ARPA_INET_H_DECLARES_ETHER_HOSTTON 1
 
@@ -17,6 +19,18 @@
 
 /* Define to 1 if you have the `asprintf' function. */
 #cmakedefine HAVE_ASPRINTF 1
+
+/* Define to 1 if you have the '__builtin_bswap16' compiler builtin. */
+#cmakedefine HAVE_BUILTIN_BSWAP16
+
+/* Define to 1 if you have the '__builtin_bswap32' compiler builtin. */
+#cmakedefine HAVE_BUILTIN_BSWAP32
+
+/* Define to 1 if you have the '__builtin_bswap64' compiler builtin. */
+#cmakedefine HAVE_BUILTIN_BSWAP64
+
+/* Define to 1 if you have the '__builtin_ctz' compiler builtin. */
+#cmakedefine HAVE_BUILTIN_CTZ
 
 /* define if you have the DAG API */
 #cmakedefine HAVE_DAG_API 1
@@ -144,9 +158,6 @@
 /* Define to 1 if `msg_flags' is a member of `struct msghdr'. */
 #cmakedefine HAVE_STRUCT_MSGHDR_MSG_FLAGS 1
 
-/* Define to 1 if the system has the type `struct rte_ether_addr'. */
-#cmakedefine HAVE_STRUCT_RTE_ETHER_ADDR 1
-
 /* Define to 1 if `hci_channel' is a member of `struct sockaddr_hci'. */
 #cmakedefine HAVE_STRUCT_SOCKADDR_HCI_HCI_CHANNEL 1
 
@@ -247,9 +258,6 @@
 
 /* support D-Bus sniffing */
 #cmakedefine PCAP_SUPPORT_DBUS 1
-
-/* target host supports DPDK */
-#cmakedefine PCAP_SUPPORT_DPDK 1
 
 /* target host supports Linux usbmon for USB sniffing */
 #cmakedefine PCAP_SUPPORT_LINUX_USBMON 1

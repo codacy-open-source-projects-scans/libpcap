@@ -35,6 +35,8 @@
 #define	pcap_int_h
 
 #include <stddef.h>
+#include <stdbool.h>
+#include <stdint.h>
 
 #include <signal.h>
 
@@ -157,7 +159,12 @@ extern int pcapint_mmap_32bit;
 
 /*
  * Do not enable this feature!  rpcap_doauth_userinfo() is subject to a stack
- * buffer overflow and must be either reimplemented or removed.
+ * buffer overflow and must be either reimplemented or removed.  Specifically,
+ * here "reimplemented" besides the obvious buffer management matters means
+ * rejecting an URL with malformed credentials as soon as possible rather than
+ * after establishing the TCP connection.  That would require to resolve the
+ * current layering violation between the URL parsing code and the network
+ * protocol code.
  */
 #define RPCAP_USE_USERINFO 0
 
@@ -593,18 +600,24 @@ struct pcap_bpf_aux_data {
  * Filtering routine that takes the auxiliary data as an additional
  * argument.
  */
-u_int	pcapint_filter_with_aux_data(const struct bpf_insn *,
-    const u_char *, u_int, u_int, const struct pcap_bpf_aux_data *);
+u_int	pcapint_filter_with_aux_data(const struct bpf_insn *, const u_int,
+    const u_char *, const u_int, const u_int,
+    const struct pcap_bpf_aux_data *);
 
 /*
  * Filtering routine that doesn't.
  */
-u_int	pcapint_filter(const struct bpf_insn *, const u_char *, u_int, u_int);
+u_int	pcapint_filter(const struct bpf_insn *, const u_int, const u_char *,
+    u_int, u_int);
 
 /*
  * Routine to validate a BPF program.
  */
-int	pcapint_validate_filter(const struct bpf_insn *, int);
+int	pcapint_validate_filter(const struct bpf_insn *, const unsigned);
+uint8_t pcapint_valid_insn(const struct bpf_insn *);
+
+bool pcapint_opcode_without_k(const uint16_t);
+uint32_t pcapint_lowest_set_bit(const uint32_t);
 
 /*
  * Internal interfaces for both "pcap_create()" and routines that
@@ -638,7 +651,7 @@ int	pcapint_parsesrcstr_ex(const char *, int *, char *, char *,
  * numeric as an error and will treat values that don't fit into
  * an unsigned int as an error.
  *
- * If the secnd argument is non-null, the string may have additional text
+ * If the second argument is non-null, the string may have additional text
  * after the number; if it is null, any additional text after the number
  * is treated as an error.
  *
